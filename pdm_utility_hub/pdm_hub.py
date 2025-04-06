@@ -12,24 +12,29 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Imposta larghezza sidebar */
+    /* Imposta larghezza sidebar e FORZA con !important */
     [data-testid="stSidebar"] > div:first-child {
-        width: 550px;
+        width: 550px !important;
+        min-width: 550px !important; /* Aggiunto per robustezza */
+        max-width: 550px !important; /* Aggiunto per robustezza */
     }
     /* Nasconde la navigazione automatica generata da Streamlit nella sidebar */
     [data-testid="stSidebarNav"] {
         display: none;
     }
 
-    /* Sfondo per il contenitore principale - NUOVO COLORE */
-    .main .block-container {
-         background-color: #ccd6e0; /* Blu/Grigio chiaro richiesto */
-         padding: 2rem 1rem 1rem 1rem; /* Padding */
-         border-radius: 0.5rem;
+    /* Sfondo per il contenitore principale - FORZATO con !important */
+    /* Target più specifico e !important */
+    div[data-testid="stAppViewContainer"] > section > div.block-container {
+         background-color: #ccd6e0 !important; /* Blu/Grigio chiaro richiesto */
+         padding: 2rem 1rem 1rem 1rem !important; /* Padding */
+         border-radius: 0.5rem !important;
     }
-    /* Assicura che il padding non venga sovrascritto */
-    div.block-container {
-        padding: 2rem 1rem 1rem 1rem;
+    /* Fallback meno specifico se il precedente non funziona */
+    .main .block-container {
+         background-color: #ccd6e0 !important;
+         padding: 2rem 1rem 1rem 1rem !important;
+         border-radius: 0.5rem !important;
     }
 
 
@@ -69,7 +74,7 @@ st.markdown(
 
     /* Colore UNICO per entrambi i bottoni cliccabili */
     .app-button-link {
-        background-color: #f5faff; /* Azzurro quasi impercettibile (colore ex-rename) */
+        background-color: #f5faff; /* Azzurro quasi impercettibile */
         border: 1px solid #c4daee; /* Bordo coordinato */
     }
     .app-button-link:hover {
@@ -79,14 +84,14 @@ st.markdown(
         cursor: pointer;
     }
 
-    /* Stile Placeholder Coming Soon (non cliccabile) - Mantenuto distinto */
+    /* Stile Placeholder Coming Soon (non cliccabile) */
     .app-button-placeholder {
         background-color: #f1f3f5;
         opacity: 0.7;
         cursor: default;
         box-shadow: none;
         color: #868e96;
-        border: 1px dashed #cccccc; /* Bordo tratteggiato per distinguerlo */
+        border: 1px dashed #cccccc;
     }
      .app-button-placeholder .icon {
          font-size: 1.5em;
@@ -96,7 +101,7 @@ st.markdown(
     /* Stile per descrizione sotto i bottoni */
      .app-description {
         font-size: 0.9em;
-        color: #343a40; /* Testo più scuro per leggibilità su sfondo #ccd6e0 */
+        color: #343a40; /* Testo più scuro per leggibilità */
         padding: 0 15px;
         text-align: justify;
         width: 90%;
@@ -123,28 +128,20 @@ col1, col2 = st.columns(2)
 
 # --- Colonna 1: App Bundle + Coming Soon ---
 with col1:
-    # Contenitore per Bottone 1 + Descrizione
     st.markdown('<div class="app-container">', unsafe_allow_html=True)
-    # Bottone 1 (Cliccabile) - Usa solo la classe base ora
     st.markdown('<a href="/Bundle_Set_Images_Creator" target="_self" class="app-button-link" data-testid="stPageLink">📦 Bundle & Set Images Creator</a>', unsafe_allow_html=True)
-    # Descrizione 1
     st.markdown('<p class="app-description">Automatically downloads, processes, and organizes images for product bundles and sets.</p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Contenitore per Placeholder Coming Soon
     st.markdown('<div class="app-container">', unsafe_allow_html=True)
-    # Placeholder Coming Soon (Non Cliccabile)
     st.markdown('<div class="app-button-placeholder"><span class="icon">🚧</span> Coming Soon</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 # --- Colonna 2: App Renaming ---
 with col2:
-    # Contenitore per Bottone 2 + Descrizione
     st.markdown('<div class="app-container">', unsafe_allow_html=True)
-    # Bottone 2 (Cliccabile) - Usa solo la classe base ora
     st.markdown('<a href="/Repository_Image_Download_Renaming" target="_self" class="app-button-link" data-testid="stPageLink">🖼️ Repository Image Download & Renaming</a>', unsafe_allow_html=True)
-    # Descrizione 2
     st.markdown('<p class="app-description">Downloads, resizes, and renames images from selected repositories (e.g. Switzerland, Farmadati).</p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
