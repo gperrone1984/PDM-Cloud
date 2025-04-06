@@ -23,10 +23,11 @@ st.set_page_config(
     page_title="Image Download & Renaming",
     layout="centered", # O 'wide'
     initial_sidebar_state="expanded" # Sidebar visibile
+    # Nessuna opzione per forzare tema light, userà il default (light)
 )
 
 # --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
-# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py (con nuovo background) ***
+# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py (con sfondo #d8dfe6) ***
 st.markdown(
     """
     <style>
@@ -41,16 +42,20 @@ st.markdown(
         display: none;
     }
 
-    /* Sfondo per il contenitore principale - NUOVO COLORE FORZATO */
+    /* Sfondo per l'INTERA AREA PRINCIPALE - NUOVO COLORE FORZATO */
+    section.main {
+        background-color: #d8dfe6 !important; /* NUOVO COLORE */
+    }
+    /* Rendi trasparente il contenitore interno e mantieni il padding */
     div[data-testid="stAppViewContainer"] > section > div.block-container {
-         background-color: #f7f7f7 !important; /* NUOVO COLORE */
-         padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0.5rem !important;
+         background-color: transparent !important;
+         padding: 2rem 1rem 1rem 1rem !important; /* Padding per contenuto */
+         border-radius: 0 !important; /* Nessun bordo arrotondato interno */
     }
     .main .block-container {
-         background-color: #f7f7f7 !important; /* NUOVO COLORE */
+         background-color: transparent !important;
          padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0.5rem !important;
+         border-radius: 0 !important;
     }
 
 
@@ -135,7 +140,8 @@ st.markdown(
      }
      */
      /* Mantieni gli stili originali dei bottoni di questa app se diversi */
-     .sidebar-title {font-size: 32px; font-weight: bold; color: #2c3e50; margin-bottom: 0px;}
+     /* --- MODIFICA: Aumentata dimensione font titolo sidebar --- */
+     .sidebar-title {font-size: 36px; font-weight: bold; color: #2c3e50; margin-bottom: 0px;}
      .sidebar-subtitle {font-size: 18px; color: #2c3e50; margin-top: 10px; margin-bottom: 5px;}
      .sidebar-desc {font-size: 16px; color: #2c3e50; margin-top: 5px; margin-bottom: 20px;}
      .stDownloadButton>button {background-color: #3498db; color: black; font-weight: bold; border: none; padding: 10px 24px; font-size: 16px; border-radius: 4px;}
@@ -156,9 +162,11 @@ st.sidebar.markdown("---") # Separatore opzionale
 
 # ----- LOGIN RIMOSSO -----
 
-# ----- Sidebar Content (Originale, ma dopo il bottone Hub) -----
+# ----- Sidebar Content -----
+# --- MODIFICA: Titolo sidebar (nessuna modifica al codice, solo CSS) ---
 st.sidebar.markdown("<div class='sidebar-title'>PDM Image Download and Renaming App</div>", unsafe_allow_html=True)
-st.sidebar.markdown("<div class='sidebar-subtitle'>What This App Does</div>", unsafe_allow_html=True)
+# --- MODIFICA: Sottotitolo in grassetto ---
+st.sidebar.markdown("<div class='sidebar-subtitle'>**What This App Does**</div>", unsafe_allow_html=True)
 st.sidebar.markdown("""
 <div class='sidebar-desc'>
 - 📥 Downloads images from the selected server<br>
@@ -364,6 +372,7 @@ if server_country == "Switzerland":
 
 
     if st.session_state.get("renaming_processing_done_ch", False):
+        # ... (codice download Svizzera invariato) ...
         st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
