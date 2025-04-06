@@ -21,9 +21,9 @@ st.markdown(
         display: none;
     }
 
-    /* Sfondo per il contenitore principale */
+    /* Sfondo per il contenitore principale - NUOVO COLORE */
     .main .block-container {
-         background-color: #f8f9fa; /* Grigio chiarissimo */
+         background-color: #ccd6e0; /* Blu/Grigio chiaro richiesto */
          padding: 2rem 1rem 1rem 1rem; /* Padding */
          border-radius: 0.5rem;
     }
@@ -49,7 +49,6 @@ st.markdown(
         text-decoration: none;
         font-weight: bold;
         font-size: 1.05rem;
-        border: 1px solid #dee2e6; /* Bordo grigio chiaro */
         width: 90%;
         min-height: 100px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.04);
@@ -57,7 +56,7 @@ st.markdown(
         text-align: center;
         line-height: 1.4;
         transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-        color: #343a40; /* Testo grigio scuro per leggibilità su sfondi chiari */
+        color: #343a40; /* Testo grigio scuro */
     }
      .app-button-link svg, .app-button-placeholder svg,
      .app-button-link .icon, .app-button-placeholder .icon {
@@ -68,39 +67,26 @@ st.markdown(
         content: "" !important; margin-right: 0 !important;
     }
 
-    /* Effetto Hover solo per i link cliccabili */
+    /* Colore UNICO per entrambi i bottoni cliccabili */
+    .app-button-link {
+        background-color: #f5faff; /* Azzurro quasi impercettibile (colore ex-rename) */
+        border: 1px solid #c4daee; /* Bordo coordinato */
+    }
     .app-button-link:hover {
+        background-color: #eaf2ff; /* Azzurro leggermente più scuro */
+        border-color: #a9cce3;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-        border-color: #adb5bd;
         cursor: pointer;
     }
 
-    /* Colore specifico Bottone 1 (Bundle) - Azzurro Polvere Chiaro */
-    .app-button-bundle {
-        background-color: #e0fbfc; /* Azzurro molto chiaro */
-        border-color: #c7eeeb;
-    }
-    .app-button-bundle:hover {
-         background-color: #c7eeeb; /* Leggermente più scuro/saturo */
-    }
-
-    /* Colore specifico Bottone 2 (Renaming) - Verde Acqua Chiaro */
-    .app-button-rename {
-         background-color: #e6fff0; /* Verde molto chiaro */
-         border-color: #cff0db;
-    }
-    .app-button-rename:hover {
-        background-color: #cff0db; /* Leggermente più scuro/saturo */
-    }
-
-    /* Stile Placeholder Coming Soon (non cliccabile) */
+    /* Stile Placeholder Coming Soon (non cliccabile) - Mantenuto distinto */
     .app-button-placeholder {
         background-color: #f1f3f5;
         opacity: 0.7;
         cursor: default;
         box-shadow: none;
         color: #868e96;
-        border-color: #e9ecef;
+        border: 1px dashed #cccccc; /* Bordo tratteggiato per distinguerlo */
     }
      .app-button-placeholder .icon {
          font-size: 1.5em;
@@ -110,7 +96,7 @@ st.markdown(
     /* Stile per descrizione sotto i bottoni */
      .app-description {
         font-size: 0.9em;
-        color: #6c757d;
+        color: #343a40; /* Testo più scuro per leggibilità su sfondo #ccd6e0 */
         padding: 0 15px;
         text-align: justify;
         width: 90%;
@@ -139,8 +125,8 @@ col1, col2 = st.columns(2)
 with col1:
     # Contenitore per Bottone 1 + Descrizione
     st.markdown('<div class="app-container">', unsafe_allow_html=True)
-    # Bottone 1 (Cliccabile)
-    st.markdown('<a href="/Bundle_Set_Images_Creator" target="_self" class="app-button-link app-button-bundle" data-testid="stPageLink">📦 Bundle & Set Images Creator</a>', unsafe_allow_html=True)
+    # Bottone 1 (Cliccabile) - Usa solo la classe base ora
+    st.markdown('<a href="/Bundle_Set_Images_Creator" target="_self" class="app-button-link" data-testid="stPageLink">📦 Bundle & Set Images Creator</a>', unsafe_allow_html=True)
     # Descrizione 1
     st.markdown('<p class="app-description">Automatically downloads, processes, and organizes images for product bundles and sets.</p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -149,7 +135,6 @@ with col1:
     st.markdown('<div class="app-container">', unsafe_allow_html=True)
     # Placeholder Coming Soon (Non Cliccabile)
     st.markdown('<div class="app-button-placeholder"><span class="icon">🚧</span> Coming Soon</div>', unsafe_allow_html=True)
-    # Nessuna descrizione per Coming Soon
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -157,8 +142,8 @@ with col1:
 with col2:
     # Contenitore per Bottone 2 + Descrizione
     st.markdown('<div class="app-container">', unsafe_allow_html=True)
-    # Bottone 2 (Cliccabile)
-    st.markdown('<a href="/Repository_Image_Download_Renaming" target="_self" class="app-button-link app-button-rename" data-testid="stPageLink">🖼️ Repository Image Download & Renaming</a>', unsafe_allow_html=True)
+    # Bottone 2 (Cliccabile) - Usa solo la classe base ora
+    st.markdown('<a href="/Repository_Image_Download_Renaming" target="_self" class="app-button-link" data-testid="stPageLink">🖼️ Repository Image Download & Renaming</a>', unsafe_allow_html=True)
     # Descrizione 2
     st.markdown('<p class="app-description">Downloads, resizes, and renames images from selected repositories (e.g. Switzerland, Farmadati).</p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
