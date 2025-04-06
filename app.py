@@ -1,5 +1,5 @@
 import streamlit as st
-from bundle_images import bundle_images
+from bundle_images import bundle_images_app
 from repository_images import repository_images_app
 
 # Page configuration
@@ -24,7 +24,7 @@ app_choice = st.sidebar.radio(
 
 # Main content
 if app_choice == "Bundle & Set Images Creator":
-    bundle_images()
+    bundle_images_app()
 
 elif app_choice == "Repository Image Download & Renaming":
     repository_images_app()
