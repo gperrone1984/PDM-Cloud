@@ -1,8 +1,4 @@
 import streamlit as st
-
-
-def bundle_images_app():
- import streamlit as st
 import streamlit.components.v1 as components
 import os
 import aiohttp
@@ -60,51 +56,25 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ---------------------- Session State Management ----------------------
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
+# ---------------------- Session State & Session ID ----------------------
 if "session_id" not in st.session_state:
     st.session_state["session_id"] = str(uuid.uuid4())
-
-# ---------------------- Login ----------------------
-if not st.session_state["authenticated"]:
-    st.title("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if username == "PDM_Team" and password == "bundlecreation":
-            st.session_state["authenticated"] = True
-            if hasattr(st, "experimental_rerun"):
-                st.experimental_rerun()
-            else:
-                st.stop()
-        else:
-            st.error("Invalid username or password")
-    st.stop()
-
-# ---------------------- Begin Main App Code ----------------------
-# Creazione di una cartella unica per ogni sessione
 session_id = st.session_state["session_id"]
-# La cartella di output per la sessione corrente (isolata)
-base_folder = f"Bundle&Set_{session_id}"
 
-# ----- Pulizia automatica dei file della sessione corrente -----
+# ---------------------- Helper Functions ----------------------
 def clear_old_data():
+    """Elimina eventuali file residui della sessione corrente."""
+    base_folder = f"Bundle&Set_{session_id}"
     if os.path.exists(base_folder):
         shutil.rmtree(base_folder)
-    # Elimina eventuali ZIP della sessione corrente
     zip_path = f"Bundle&Set_{session_id}.zip"
     if os.path.exists(zip_path):
         os.remove(zip_path)
-    # Elimina il file CSV degli errori se esistente
     if os.path.exists("missing_images.csv"):
         os.remove("missing_images.csv")
     if os.path.exists("bundle_list.csv"):
         os.remove("bundle_list.csv")
 
-clear_old_data()  # Pulizia dei file della sessione al primo avvio
-
-# ---------------------- Helper Functions ----------------------
 async def async_download_image(product_code, extension, session):
     # Se il product_code inizia per '1' o '0', aggiunge il prefisso "D"
     if product_code.startswith(('1', '0')):
@@ -203,8 +173,8 @@ def save_binary_file(path, data):
     with open(path, 'wb') as f:
         f.write(data)
 
-# Funzione per la modalità NL FR: scarica in parallelo le immagini con estensione 1-fr e 1-nl.
 async def async_get_nl_fr_images(product_code, session):
+    """Scarica in parallelo le immagini per la modalità NL FR."""
     tasks = [
         async_download_image(product_code, "1-fr", session),
         async_download_image(product_code, "1-nl", session)
@@ -217,14 +187,13 @@ async def async_get_nl_fr_images(product_code, session):
         images["1-nl"] = results[1][0]
     return images
 
-# Funzione generica per il download, gestisce anche il caso speciale "NL FR"
 async def async_get_image_with_fallback(product_code, session):
+    """Funzione generica per il download con gestione fallback."""
     fallback_ext = st.session_state.get("fallback_ext", None)
     if fallback_ext == "NL FR":
         images_dict = await async_get_nl_fr_images(product_code, session)
         if images_dict:
             return images_dict, "NL FR"
-    # Prova le estensioni standard "1" e "10"
     tasks = [async_download_image(product_code, ext, session) for ext in ["1", "10"]]
     results = await asyncio.gather(*tasks)
     for ext, result in zip(["1", "10"], results):
@@ -237,7 +206,6 @@ async def async_get_image_with_fallback(product_code, session):
             return content, fallback_ext
     return None, None
 
-# ---------------------- Main Processing Function ----------------------
 async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal"):
     # Protezione tramite crittografia
     if "encryption_key" not in st.session_state:
@@ -266,6 +234,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
     data.dropna(inplace=True)
     
     st.write(f"File loaded: {len(data)} bundles found.")
+    base_folder = f"Bundle&Set_{session_id}"
     os.makedirs(base_folder, exist_ok=True)
     
     mixed_sets_needed = False
@@ -287,7 +256,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
     
             if is_uniform:
                 product_code = product_codes[0]
-                # Imposta la cartella di destinazione per il bundle
                 folder_name = os.path.join(base_folder, f"bundle_{num_products}")
                 if st.session_state.get("fallback_ext") in ["NL FR", "1-fr", "1-de", "1-nl"]:
                     bundle_cross_country = True
@@ -297,7 +265,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 if st.session_state.get("fallback_ext") == "NL FR":
                     result, used_ext = await async_get_image_with_fallback(product_code, session)
                     if used_ext == "NL FR" and isinstance(result, dict):
-                        # Elaborazione delle immagini NL FR
                         for lang, image_data in result.items():
                             suffix = "-p1-fr" if lang == "1-fr" else "-p1-nl"
                             try:
@@ -314,7 +281,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 st.error(f"Error processing image for bundle {bundle_code}: {e}")
                                 error_list.append((bundle_code, product_code))
                     elif result:
-                        # Fallback standard: una sola immagine, rinomina come -h1
                         try:
                             img = await asyncio.to_thread(Image.open, BytesIO(result))
                             if num_products == 2:
@@ -331,7 +297,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                     else:
                         error_list.append((bundle_code, product_code))
                 else:
-                    # Branch standard per fallback_ext diverso da NL FR
                     image_data, used_ext = await async_get_image_with_fallback(product_code, session)
                     if used_ext in ["1-fr", "1-de", "1-nl"]:
                         bundle_cross_country = True
@@ -416,155 +381,153 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
     with open(bundle_list_csv, "rb") as f_csv:
         bundle_list_data = f_csv.read()
     
-    # Creazione del file ZIP:
-    # Creiamo una struttura temporanea: una cartella "Bundle&Set" che contiene i file della sessione
+    # Creazione del file ZIP
     temp_parent = "Bundle&Set_temp"
     if os.path.exists(temp_parent):
         shutil.rmtree(temp_parent)
     os.makedirs(temp_parent, exist_ok=True)
-    # All'interno della cartella temporanea creiamo una cartella "Bundle&Set" e copiamo i file della sessione
     zip_folder = os.path.join(temp_parent, "Bundle&Set")
     shutil.copytree(base_folder, zip_folder)
-    # Creiamo l'archivio ZIP (il nome include lo session ID per evitare conflitti)
     zip_path = f"Bundle&Set_{session_id}.zip"
     shutil.make_archive("Bundle&Set_temp", 'zip', temp_parent)
     os.rename("Bundle&Set_temp.zip", zip_path)
-    # Puliamo la cartella temporanea
     shutil.rmtree(temp_parent)
     with open(zip_path, "rb") as zip_file:
         zip_bytes = zip_file.read()
     
     return zip_bytes, missing_images_data, missing_images_df, bundle_list_data
 
-# ---------------------- End of Function Definitions ----------------------
-
-# Main UI
-st.title("PDM Bundle Image Creator")
-
-st.markdown(
-    """
-    **How to use:**
+# ---------------------- Main App UI ----------------------
+def run():
+    st.title("PDM Bundle Image Creator")
     
-    1. Create a Quick Report in Akeneo containing the list of products.
-    2. Select the following options:
-       - File Type: CSV - All Attributes or Grid Context (for Grid Context, select ID and PZN included in the set) - With Codes - Without Media
-    3. **Choose the language for language specific photos:** (if needed)
-    4. **Choose bundle layout:** (Horizontal, Vertical, or Automatic)
-    5. Click **Process CSV** to start the process.
-    6. Download the files.
-    7. Before starting a new process, click on **Reset Data**.
-    """
-)
-
-if st.button("🧹 Clear Cache and Reset Data"):
-    keys_to_keep = {"authenticated", "session_id", "fallback_ext"}
-    for key in list(st.session_state.keys()):
-        if key not in keys_to_keep:
-            del st.session_state[key]
-    st.cache_data.clear()
-    clear_old_data()
-    components.html("<script>window.location.href=window.location.origin+window.location.pathname;</script>", height=0)
-
-st.sidebar.header("What This App Does")
-st.sidebar.markdown(
-    """
-    - ❓ **Automated Bundle Creation:** Automatically create product bundles by downloading and organizing images.
-    - 📂 **CSV Upload:** Use a Quick Report in Akeneo.
-    - 🔎 **Language Selection:** Choose the language for language specific photos.
-    - ✏️ **Dynamic Processing:** Combine images (double/triple) with proper resizing.
-    - 🔎 **Layout:** Choose the layout for double/triple bundles.
-    - 📁 **Efficient Organization:** Each session crea una cartella unica per evitare conflitti, poi nel file ZIP viene inclusa una cartella generale chiamata "Bundle&Set".
-    - ✏️ **Renames images** using the bundle code and specific suffixes:
-         - NL FR: "-p1-fr" / "-p1-nl"
-         - Standard fallback: "-h1"
-    - ❌ **Error Logging:** Missing images are logged in a CSV.
-    - 📥 **Download:** Get a ZIP with all processed images and reports.
-    - 🌐 **Interactive Preview:** Preview and download individual product images from the sidebar.
-    """, unsafe_allow_html=True
-)
-
-st.sidebar.header("Product Image Preview")
-product_code = st.sidebar.text_input("Enter Product Code:")
-selected_extension = st.sidebar.selectbox("Select Image Extension:", [str(i) for i in range(1, 19)], key="sidebar_ext")
-with st.sidebar:
-    col_button, col_spinner = st.columns([2, 1])
-    show_image = col_button.button("Show Image")
-    spinner_placeholder = col_spinner.empty()
-
-if show_image and product_code:
-    with spinner_placeholder:
-        with st.spinner("Processing..."):
-            preview_url = f"https://cdn.shop-apotheke.com/images/{product_code}-p{selected_extension}.jpg"
-            try:
-                import requests  # per il download sincrono in anteprima
-                response = requests.get(preview_url, stream=True)
-                image_data = response.content if response.status_code == 200 else None
-            except Exception:
-                image_data = None
-    if image_data:
-        image = Image.open(BytesIO(image_data))
-        st.sidebar.image(image, caption=f"Product: {product_code} (p{selected_extension})", use_container_width=True)
-        st.sidebar.download_button(
-            label="Download Image",
-            data=image_data,
-            file_name=f"{product_code}-p{selected_extension}.jpg",
-            mime="image/jpeg"
-        )
-    else:
-        st.sidebar.error(f"No image found for {product_code} with -p{selected_extension}.jpg")
-
-uploaded_file = st.file_uploader("**Upload CSV File**", type=["csv"], key="file_uploader")
-if uploaded_file:
-    col1, col2 = st.columns(2)
-    with col1:
-        # Aggiornate le opzioni: rimuove "BE" e aggiunge "NL FR"
-        fallback_language = st.selectbox("**Choose the language for language specific photos:**", options=["None", "FR", "DE", "NL FR"], index=0)
-    with col2:
-        layout_choice = st.selectbox("**Choose bundle layout:**", options=["Horizontal", "Vertical", "Automatic"], index=2)
-
-    if fallback_language == "NL FR":
-        st.session_state["fallback_ext"] = "NL FR"
-    elif fallback_language != "None":
-        st.session_state["fallback_ext"] = f"1-{fallback_language.lower()}"
-    else:
-        st.session_state["fallback_ext"] = None
-
-    if st.button("Process CSV"):
-        start_time = time.time()
-        progress_bar = st.progress(0)
-        zip_data, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(process_file_async(uploaded_file, progress_bar, layout=layout_choice))
-        progress_bar.empty()
-        elapsed_time = time.time() - start_time
-        minutes = int(elapsed_time // 60)
-        seconds = int(elapsed_time % 60)
-        st.write(f"Time to download and process images: {minutes} minutes and {seconds} seconds")
-        if zip_data:
-            st.session_state["zip_data"] = zip_data
-            st.session_state["bundle_list_data"] = bundle_list_data
-            st.session_state["missing_images_data"] = missing_images_data
-            st.session_state["missing_images_df"] = missing_images_df
-
-if "zip_data" in st.session_state:
-    st.success("Processing complete! Download your files below.")
-    st.download_button(
-        label="Download Bundle Image",
-        data=st.session_state["zip_data"],
-        file_name=f"Bundle&Set_{session_id}.zip",
-        mime="application/zip"
+    st.markdown(
+        """
+        **How to use:**
+        
+        1. Create a Quick Report in Akeneo containing the list of products.
+        2. Select the following options:
+           - File Type: CSV - All Attributes or Grid Context (for Grid Context, select ID and PZN included in the set) - With Codes - Without Media
+        3. **Choose the language for language specific photos:** (if needed)
+        4. **Choose bundle layout:** (Horizontal, Vertical, or Automatic)
+        5. Click **Process CSV** to start the process.
+        6. Download the files.
+        7. Before starting a new process, click on **Reset Data**.
+        """
     )
-    st.download_button(
-        label="Download Bundle List",
-        data=st.session_state["bundle_list_data"],
-        file_name="bundle_list.csv",
-        mime="text/csv"
+    
+    if st.button("🧹 Clear Cache and Reset Data"):
+        keys_to_keep = {"session_id", "fallback_ext", "encryption_key"}
+        for key in list(st.session_state.keys()):
+            if key not in keys_to_keep:
+                del st.session_state[key]
+        st.cache_data.clear()
+        clear_old_data()
+        components.html("<script>window.location.href=window.location.origin+window.location.pathname;</script>", height=0)
+    
+    st.sidebar.header("What This App Does")
+    st.sidebar.markdown(
+        """
+        - ❓ **Automated Bundle Creation:** Automatically create product bundles by downloading and organizing images.
+        - 📂 **CSV Upload:** Use a Quick Report in Akeneo.
+        - 🔎 **Language Selection:** Choose the language for language specific photos.
+        - ✏️ **Dynamic Processing:** Combine images (double/triple) with proper resizing.
+        - 🔎 **Layout:** Choose the layout for double/triple bundles.
+        - 📁 **Efficient Organization:** Each session creates a unique folder to avoid conflicts. The final ZIP includes a general folder named "Bundle&Set".
+        - ✏️ **Renames images** using the bundle code and specific suffixes:
+             - NL FR: "-p1-fr" / "-p1-nl"
+             - Standard fallback: "-h1"
+        - ❌ **Error Logging:** Missing images are logged in a CSV.
+        - 📥 **Download:** Get a ZIP with all processed images and reports.
+        - 🌐 **Interactive Preview:** Preview and download individual product images from the sidebar.
+        """, unsafe_allow_html=True
     )
-    if st.session_state["missing_images_df"] is not None and not st.session_state["missing_images_df"].empty:
-        st.warning("Some images were not found:")
-        st.dataframe(st.session_state["missing_images_df"].reset_index(drop=True))
+    
+    st.sidebar.header("Product Image Preview")
+    product_code = st.sidebar.text_input("Enter Product Code:")
+    selected_extension = st.sidebar.selectbox("Select Image Extension:", [str(i) for i in range(1, 19)], key="sidebar_ext")
+    with st.sidebar:
+        col_button, col_spinner = st.columns([2, 1])
+        show_image = col_button.button("Show Image")
+        spinner_placeholder = col_spinner.empty()
+    
+    if show_image and product_code:
+        with spinner_placeholder:
+            with st.spinner("Processing..."):
+                preview_url = f"https://cdn.shop-apotheke.com/images/{product_code}-p{selected_extension}.jpg"
+                try:
+                    import requests
+                    response = requests.get(preview_url, stream=True)
+                    image_data = response.content if response.status_code == 200 else None
+                except Exception:
+                    image_data = None
+        if image_data:
+            image = Image.open(BytesIO(image_data))
+            st.sidebar.image(image, caption=f"Product: {product_code} (p{selected_extension})", use_container_width=True)
+            st.sidebar.download_button(
+                label="Download Image",
+                data=image_data,
+                file_name=f"{product_code}-p{selected_extension}.jpg",
+                mime="image/jpeg"
+            )
+        else:
+            st.sidebar.error(f"No image found for {product_code} with -p{selected_extension}.jpg")
+    
+    uploaded_file = st.file_uploader("**Upload CSV File**", type=["csv"], key="file_uploader")
+    if uploaded_file:
+        col1, col2 = st.columns(2)
+        with col1:
+            fallback_language = st.selectbox("**Choose the language for language specific photos:**", options=["None", "FR", "DE", "NL FR"], index=0)
+        with col2:
+            layout_choice = st.selectbox("**Choose bundle layout:**", options=["Horizontal", "Vertical", "Automatic"], index=2)
+    
+        if fallback_language == "NL FR":
+            st.session_state["fallback_ext"] = "NL FR"
+        elif fallback_language != "None":
+            st.session_state["fallback_ext"] = f"1-{fallback_language.lower()}"
+        else:
+            st.session_state["fallback_ext"] = None
+    
+        if st.button("Process CSV"):
+            start_time = time.time()
+            progress_bar = st.progress(0)
+            zip_data, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
+                process_file_async(uploaded_file, progress_bar, layout=layout_choice)
+            )
+            progress_bar.empty()
+            elapsed_time = time.time() - start_time
+            minutes = int(elapsed_time // 60)
+            seconds = int(elapsed_time % 60)
+            st.write(f"Time to download and process images: {minutes} minutes and {seconds} seconds")
+            if zip_data:
+                st.session_state["zip_data"] = zip_data
+                st.session_state["bundle_list_data"] = bundle_list_data
+                st.session_state["missing_images_data"] = missing_images_data
+                st.session_state["missing_images_df"] = missing_images_df
+    
+    if "zip_data" in st.session_state:
+        st.success("Processing complete! Download your files below.")
         st.download_button(
-            label="Download Missing Images CSV",
-            data=st.session_state["missing_images_data"],
-            file_name="missing_images.csv",
+            label="Download Bundle Image",
+            data=st.session_state["zip_data"],
+            file_name=f"Bundle&Set_{session_id}.zip",
+            mime="application/zip"
+        )
+        st.download_button(
+            label="Download Bundle List",
+            data=st.session_state["bundle_list_data"],
+            file_name="bundle_list.csv",
             mime="text/csv"
         )
+        if st.session_state.get("missing_images_df") is not None and not st.session_state["missing_images_df"].empty:
+            st.warning("Some images were not found:")
+            st.dataframe(st.session_state["missing_images_df"].reset_index(drop=True))
+            st.download_button(
+                label="Download Missing Images CSV",
+                data=st.session_state["missing_images_data"],
+                file_name="missing_images.csv",
+                mime="text/csv"
+            )
 
+if __name__ == "__main__":
+    run()
