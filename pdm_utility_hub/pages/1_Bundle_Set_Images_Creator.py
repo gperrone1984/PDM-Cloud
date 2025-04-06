@@ -15,11 +15,11 @@ from cryptography.fernet import Fernet
 st.set_page_config(
     page_title="Bundle & Set Creator",
     # layout="wide", # RIMOSSO per usare il default (centered)
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded" # Sidebar visibile
 )
 
 # --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
-# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py (con nuovo background) ***
+# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py (con sfondo #d8dfe6) ***
 st.markdown(
     """
     <style>
@@ -168,8 +168,350 @@ if "bundle_creator_session_id" not in st.session_state:
 # ---------------------- LOGIN RIMOSSO ----------------------
 
 # ---------------------- Begin Main App Code ----------------------
-# ... (Il resto del codice Python dell'app Bundle Creator rimane invariato) ...
-# ... (da session_id = st.session_state["bundle_creator_session_id"] in poi) ...
+session_id = st.session_state["bundle_creator_session_id"]
+base_folder = f"Bundle&Set_{session_id}"
+
+def clear_old_data():
+    if os.path.exists(base_folder):
+        shutil.rmtree(base_folder)
+    zip_path = f"Bundle&Set_{session_id}.zip"
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+    missing_csv_path = f"missing_images_{session_id}.csv"
+    bundle_list_csv_path = f"bundle_list_{session_id}.csv"
+    if os.path.exists(missing_csv_path):
+        os.remove(missing_csv_path)
+    if os.path.exists(bundle_list_csv_path):
+        os.remove(bundle_list_csv_path)
+
+# ---------------------- Helper Functions (Originali) ----------------------
+async def async_download_image(product_code, extension, session):
+    if product_code.startswith(('1', '0')):
+        product_code = f"D{product_code}"
+    url = f"https://cdn.shop-apotheke.com/images/{product_code}-p{extension}.jpg"
+    try:
+        async with session.get(url) as response:
+            if response.status == 200:
+                content = await response.read()
+                return content, url
+            else:
+                return None, None
+    except Exception:
+        return None, None
+
+def trim(im):
+    bg = Image.new(im.mode, im.size, (255, 255, 255))
+    diff = ImageChops.difference(im, bg)
+    bbox = diff.getbbox()
+    if bbox:
+        return im.crop(bbox)
+    return im
+
+def process_double_bundle_image(image, layout="horizontal"):
+    image = trim(image)
+    width, height = image.size
+    chosen_layout = "vertical" if (layout.lower() == "automatic" and height < width) else layout.lower()
+    if chosen_layout == "horizontal":
+        merged_width = width * 2
+        merged_height = height
+        merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
+        merged_image.paste(image, (0, 0))
+        merged_image.paste(image, (width, 0))
+    elif chosen_layout == "vertical":
+        merged_width = width
+        merged_height = height * 2
+        merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
+        merged_image.paste(image, (0, 0))
+        merged_image.paste(image, (0, height))
+    else:
+        merged_width = width * 2
+        merged_height = height
+        merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
+        merged_image.paste(image, (0, 0))
+        merged_image.paste(image, (width, 0))
+
+    scale_factor = min(1000 / merged_width, 1000 / merged_height)
+    new_size = (int(merged_width * scale_factor), int(merged_height * scale_factor))
+    resized_image = merged_image.resize(new_size, Image.LANCZOS)
+    final_image = Image.new("RGB", (1000, 1000), (255, 255, 255))
+    x_offset = (1000 - new_size[0]) // 2
+    y_offset = (1000 - new_size[1]) // 2
+    final_image.paste(resized_image, (x_offset, y_offset))
+    return final_image
+
+def process_triple_bundle_image(image, layout="horizontal"):
+    image = trim(image)
+    width, height = image.size
+    chosen_layout = "vertical" if (layout.lower() == "automatic" and height < width) else layout.lower()
+    if chosen_layout == "horizontal":
+        merged_width = width * 3
+        merged_height = height
+        merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
+        merged_image.paste(image, (0, 0))
+        merged_image.paste(image, (width, 0))
+        merged_image.paste(image, (width * 2, 0))
+    elif chosen_layout == "vertical":
+        merged_width = width
+        merged_height = height * 3
+        merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
+        merged_image.paste(image, (0, 0))
+        merged_image.paste(image, (0, height))
+        merged_image.paste(image, (0, height * 2))
+    else:
+        merged_width = width * 3
+        merged_height = height
+        merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
+        merged_image.paste(image, (0, 0))
+        merged_image.paste(image, (width, 0))
+        merged_image.paste(image, (width * 2, 0))
+
+    scale_factor = min(1000 / merged_width, 1000 / merged_height)
+    new_size = (int(merged_width * scale_factor), int(merged_height * scale_factor))
+    resized_image = merged_image.resize(new_size, Image.LANCZOS)
+    final_image = Image.new("RGB", (1000, 1000), (255, 255, 255))
+    x_offset = (1000 - new_size[0]) // 2
+    y_offset = (1000 - new_size[1]) // 2
+    final_image.paste(resized_image, (x_offset, y_offset))
+    return final_image
+
+def save_binary_file(path, data):
+    with open(path, 'wb') as f:
+        f.write(data)
+
+async def async_get_nl_fr_images(product_code, session):
+    tasks = [
+        async_download_image(product_code, "1-fr", session),
+        async_download_image(product_code, "1-nl", session)
+    ]
+    results = await asyncio.gather(*tasks)
+    images = {}
+    if results[0][0]:
+        images["1-fr"] = results[0][0]
+    if results[1][0]:
+        images["1-nl"] = results[1][0]
+    return images
+
+async def async_get_image_with_fallback(product_code, session):
+    fallback_ext = st.session_state.get("fallback_ext", None)
+    if fallback_ext == "NL FR":
+        images_dict = await async_get_nl_fr_images(product_code, session)
+        if images_dict:
+            return images_dict, "NL FR"
+    tasks = [async_download_image(product_code, ext, session) for ext in ["1", "10"]]
+    results = await asyncio.gather(*tasks)
+    for ext, result in zip(["1", "10"], results):
+        content, url = result
+        if content:
+            return content, ext
+    if fallback_ext and fallback_ext != "NL FR":
+        content, _ = await async_download_image(product_code, fallback_ext, session)
+        if content:
+            return content, fallback_ext
+    return None, None
+
+# ---------------------- Main Processing Function (Originale) ----------------------
+async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal"):
+    session_id = st.session_state["bundle_creator_session_id"]
+    base_folder = f"Bundle&Set_{session_id}"
+    missing_images_csv_path = f"missing_images_{session_id}.csv"
+    bundle_list_csv_path = f"bundle_list_{session_id}.csv"
+
+    if "encryption_key" not in st.session_state:
+        st.session_state["encryption_key"] = Fernet.generate_key()
+    key = st.session_state["encryption_key"]
+    f = Fernet(key)
+
+    file_bytes = uploaded_file.read()
+    encrypted_bytes = f.encrypt(file_bytes)
+    decrypted_bytes = f.decrypt(encrypted_bytes)
+
+    csv_file = BytesIO(decrypted_bytes)
+    data = pd.read_csv(csv_file, delimiter=';', dtype=str)
+
+    required_columns = {'sku', 'pzns_in_set'}
+    missing_columns = required_columns - set(data.columns)
+    if missing_columns:
+        st.error(f"Missing required columns: {', '.join(missing_columns)}")
+        return None, None, None, None
+
+    if data.empty:
+        st.error("The CSV file is empty!")
+        return None, None, None, None
+
+    data = data[list(required_columns)]
+    data.dropna(inplace=True)
+
+    st.write(f"File loaded: {len(data)} bundles found.")
+    os.makedirs(base_folder, exist_ok=True)
+
+    mixed_sets_needed = False
+    mixed_folder = os.path.join(base_folder, "mixed_sets")
+    error_list = []
+    bundle_list = []
+
+    total = len(data)
+
+    connector = aiohttp.TCPConnector(limit=100)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        for i, (_, row) in enumerate(data.iterrows()):
+            bundle_code = row['sku'].strip()
+            product_codes = [code.strip() for code in row['pzns_in_set'].strip().split(',')]
+            num_products = len(product_codes)
+            is_uniform = (len(set(product_codes)) == 1)
+            bundle_type = f"bundle of {num_products}" if is_uniform else "mixed"
+            bundle_cross_country = False
+
+            if is_uniform:
+                product_code = product_codes[0]
+                folder_name = os.path.join(base_folder, f"bundle_{num_products}")
+                if st.session_state.get("fallback_ext") in ["NL FR", "1-fr", "1-de", "1-nl"]:
+                    bundle_cross_country = True
+                    folder_name = os.path.join(base_folder, "cross-country")
+                os.makedirs(folder_name, exist_ok=True)
+
+                if st.session_state.get("fallback_ext") == "NL FR":
+                    result, used_ext = await async_get_image_with_fallback(product_code, session)
+                    if used_ext == "NL FR" and isinstance(result, dict):
+                        for lang, image_data in result.items():
+                            suffix = "-p1-fr" if lang == "1-fr" else "-p1-nl"
+                            try:
+                                img = await asyncio.to_thread(Image.open, BytesIO(image_data))
+                                if num_products == 2:
+                                    final_img = await asyncio.to_thread(process_double_bundle_image, img, layout)
+                                elif num_products == 3:
+                                    final_img = await asyncio.to_thread(process_triple_bundle_image, img, layout)
+                                else:
+                                    final_img = img
+                                save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
+                                await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=100)
+                            except Exception as e:
+                                st.error(f"Error processing image for bundle {bundle_code}: {e}")
+                                error_list.append((bundle_code, product_code))
+                    elif result:
+                        try:
+                            img = await asyncio.to_thread(Image.open, BytesIO(result))
+                            if num_products == 2:
+                                final_img = await asyncio.to_thread(process_double_bundle_image, img, layout)
+                            elif num_products == 3:
+                                final_img = await asyncio.to_thread(process_triple_bundle_image, img, layout)
+                            else:
+                                final_img = img
+                            save_path = os.path.join(folder_name, f"{bundle_code}-h1.jpg")
+                            await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=100)
+                        except Exception as e:
+                            st.error(f"Error processing image for bundle {bundle_code}: {e}")
+                            error_list.append((bundle_code, product_code))
+                    else:
+                        error_list.append((bundle_code, product_code))
+                else:
+                    image_data, used_ext = await async_get_image_with_fallback(product_code, session)
+                    if used_ext in ["1-fr", "1-de", "1-nl"]:
+                        bundle_cross_country = True
+                        folder_name = os.path.join(base_folder, "cross-country")
+                        os.makedirs(folder_name, exist_ok=True)
+                    if image_data:
+                        try:
+                            img = await asyncio.to_thread(Image.open, BytesIO(image_data))
+                            if num_products == 2:
+                                final_img = await asyncio.to_thread(process_double_bundle_image, img, layout)
+                            elif num_products == 3:
+                                final_img = await asyncio.to_thread(process_triple_bundle_image, img, layout)
+                            else:
+                                final_img = img
+                            suffix = "-h1"
+                            save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
+                            await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=100)
+                        except Exception as e:
+                            st.error(f"Error processing image for bundle {bundle_code}: {e}")
+                            error_list.append((bundle_code, product_code))
+                    else:
+                        error_list.append((bundle_code, product_code))
+
+            else:
+                mixed_sets_needed = True
+                bundle_folder = os.path.join(mixed_folder, bundle_code)
+                os.makedirs(bundle_folder, exist_ok=True)
+                for p_code in product_codes:
+                    if st.session_state.get("fallback_ext") == "NL FR":
+                        result, used_ext = await async_get_image_with_fallback(p_code, session)
+                        if used_ext == "NL FR" and isinstance(result, dict):
+                            for lang, image_data in result.items():
+                                suffix = "-p1-fr" if lang == "1-fr" else "-p1-nl"
+                                prod_folder = os.path.join(bundle_folder, "cross-country")
+                                os.makedirs(prod_folder, exist_ok=True)
+                                file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
+                                await asyncio.to_thread(save_binary_file, file_path, image_data)
+                        elif result:
+                            suffix = "-h1"
+                            prod_folder = os.path.join(bundle_folder, "cross-country") if used_ext in ["1-fr", "1-de", "1-nl"] else bundle_folder
+                            os.makedirs(prod_folder, exist_ok=True)
+                            file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
+                            await asyncio.to_thread(save_binary_file, file_path, result)
+                        else:
+                            error_list.append((bundle_code, p_code))
+                    else:
+                        image_data, used_ext = await async_get_image_with_fallback(p_code, session)
+                        if used_ext in ["1-fr", "1-de", "1-nl"]:
+                            bundle_cross_country = True
+                        if image_data:
+                            prod_folder = os.path.join(bundle_folder, "cross-country") if used_ext in ["1-fr", "1-de", "1-nl"] else bundle_folder
+                            os.makedirs(prod_folder, exist_ok=True)
+                            file_path = os.path.join(prod_folder, f"{p_code}.jpg")
+                            await asyncio.to_thread(save_binary_file, file_path, image_data)
+                        else:
+                            error_list.append((bundle_code, p_code))
+
+            if progress_bar is not None:
+                progress_bar.progress((i + 1) / total)
+
+            bundle_list.append([bundle_code, ', '.join(product_codes), bundle_type, "Yes" if bundle_cross_country else "No"])
+
+    if not mixed_sets_needed and os.path.exists(mixed_folder):
+        shutil.rmtree(mixed_folder)
+
+    missing_images_data = None
+    missing_images_df = pd.DataFrame(columns=["PZN Bundle", "PZN with image missing"])
+    if error_list:
+        missing_images_df = pd.DataFrame(error_list, columns=["PZN Bundle", "PZN with image missing"])
+        missing_images_df = missing_images_df.groupby("PZN Bundle", as_index=False).agg({
+            "PZN with image missing": lambda x: ', '.join(sorted(list(set(x))))
+        })
+        missing_images_df.to_csv(missing_images_csv_path, index=False, sep=';', encoding='utf-8-sig')
+        with open(missing_images_csv_path, "rb") as f_csv:
+            missing_images_data = f_csv.read()
+
+    bundle_list_data = None
+    if bundle_list:
+        bundle_list_df = pd.DataFrame(bundle_list, columns=["sku", "pzns_in_set", "bundle type", "cross-country"])
+        bundle_list_df.to_csv(bundle_list_csv_path, index=False, sep=';', encoding='utf-8-sig')
+        with open(bundle_list_csv_path, "rb") as f_csv:
+            bundle_list_data = f_csv.read()
+
+    zip_bytes = None
+    if os.path.exists(base_folder) and any(os.scandir(base_folder)):
+        temp_parent = f"Bundle&Set_temp_{session_id}"
+        if os.path.exists(temp_parent): shutil.rmtree(temp_parent)
+        os.makedirs(temp_parent, exist_ok=True)
+        zip_content_folder = os.path.join(temp_parent, "Bundle&Set")
+        shutil.copytree(base_folder, zip_content_folder)
+        zip_base_name = f"Bundle&Set_archive_{session_id}"
+        try:
+            shutil.make_archive(zip_base_name, 'zip', temp_parent)
+            final_zip_path = f"{zip_base_name}.zip"
+            if os.path.exists(final_zip_path):
+                with open(final_zip_path, "rb") as zip_file:
+                    zip_bytes = zip_file.read()
+                os.remove(final_zip_path)
+            else:
+                 st.error("Failed to create ZIP archive.")
+        except Exception as e:
+            st.error(f"Error during zipping: {e}")
+        finally:
+            if os.path.exists(temp_parent): shutil.rmtree(temp_parent)
+
+    return zip_bytes, missing_images_data, missing_images_df, bundle_list_data
+
+# ---------------------- End of Function Definitions ----------------------
 
 # --- Titolo Modificato ---
 st.title("PDM Bundle&Set Image Creator")
@@ -280,7 +622,6 @@ if uploaded_file:
         try:
             # Assicurati che la funzione sia definita
             if 'process_file_async' not in locals():
-                 # Aggiungi una definizione vuota o un messaggio di errore se non definita
                  st.error("Processing function not found!")
                  st.stop()
 
