@@ -36,12 +36,12 @@ st.markdown(
 
     /* Sfondo per il contenitore principale - NUOVO COLORE FORZATO */
     div[data-testid="stAppViewContainer"] > section > div.block-container {
-         background-color: #d8dfe6 !important; /* NUOVO COLORE */
+         background-color: #edf0f2 !important; /* NUOVO COLORE */
          padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
     }
     .main .block-container {
-         background-color: #d8dfe6 !important; /* NUOVO COLORE */
+         background-color: #edf0f2 !important; /* NUOVO COLORE */
          padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
     }
