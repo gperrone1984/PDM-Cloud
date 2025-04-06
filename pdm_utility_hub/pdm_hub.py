@@ -23,16 +23,20 @@ st.markdown(
         display: none;
     }
 
-    /* Sfondo per il contenitore principale - NUOVO COLORE FORZATO */
+    /* Sfondo per l'INTERA AREA PRINCIPALE - NUOVO COLORE FORZATO */
+    section.main {
+        background-color: #d8dfe6 !important; /* NUOVO COLORE */
+    }
+    /* Rendi trasparente il contenitore interno e mantieni il padding */
     div[data-testid="stAppViewContainer"] > section > div.block-container {
-         background-color: #d8dfe6 !important; /* NUOVO COLORE */
-         padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0.5rem !important;
+         background-color: transparent !important;
+         padding: 2rem 1rem 1rem 1rem !important; /* Padding per contenuto */
+         border-radius: 0 !important; /* Nessun bordo arrotondato interno */
     }
     .main .block-container {
-         background-color: #d8dfe6 !important; /* NUOVO COLORE */
+         background-color: transparent !important;
          padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0.5rem !important;
+         border-radius: 0 !important;
     }
 
 
@@ -105,6 +109,48 @@ st.markdown(
         width: 90%;
         margin: 0 auto;
      }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# --- Bottone per tornare all'Hub nella Sidebar ---
+st.sidebar.page_link("pdm_hub.py", label="**PDM Utility Hub**", icon="🏠")
+st.sidebar.markdown("---") # Separatore opzionale
+
+# --- Contenuto Principale Hub ---
+st.title("🛠️ PDM Utility Hub")
+st.markdown("---")
+st.markdown("**Welcome to the Product Data Management Utility Hub. Select an application below to get started.**")
+st.markdown("<br>", unsafe_allow_html=True) # Spazio
+
+# Layout a 2 colonne per i bottoni principali
+col1, col2 = st.columns(2)
+
+# --- Colonna 1: App Bundle + Coming Soon ---
+with col1:
+    st.markdown('<div class="app-container">', unsafe_allow_html=True)
+    st.markdown('<a href="/Bundle_Set_Images_Creator" target="_self" class="app-button-link" data-testid="stPageLink">📦 Bundle & Set Images Creator</a>', unsafe_allow_html=True)
+    st.markdown('<p class="app-description">Automatically downloads, processes, and organizes images for product bundles and sets.</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="app-container">', unsafe_allow_html=True)
+    st.markdown('<div class="app-button-placeholder"><span class="icon">🚧</span> Coming Soon</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# --- Colonna 2: App Renaming ---
+with col2:
+    st.markdown('<div class="app-container">', unsafe_allow_html=True)
+    st.markdown('<a href="/Repository_Image_Download_Renaming" target="_self" class="app-button-link" data-testid="stPageLink">🖼️ Repository Image Download & Renaming</a>', unsafe_allow_html=True)
+    st.markdown('<p class="app-description">Downloads, resizes, and renames images from selected repositories (e.g. Switzerland, Farmadati).</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# --- Footer Modificato ---
+st.markdown("---")
+st.caption("v.1.0")
 
     </style>
     """,
