@@ -69,7 +69,8 @@ st.sidebar.markdown("""
 - 🏷️ Renames with a '-h1' suffix
 </div>
 """, unsafe_allow_html=True)
-st.sidebar.markdown("<div class='server-select-label'>Select Server Country/Image Source</div>", unsafe_allow_html=True)
+# --- Etichetta Modificata ---
+st.sidebar.markdown("<div class='server-select-label'>Select Server Image</div>", unsafe_allow_html=True)
 server_country = st.sidebar.selectbox("", options=["Switzerland", "Farmadati", "coming soon"], index=0, key="server_select_renaming")
 
 # ----- Session State (Originale) -----
@@ -343,7 +344,8 @@ elif server_country == "Farmadati":
             WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
             DATASET_CODE = "TDZ"
 
-            @st.cache_resource(ttl=3600)
+            # --- Modifica: Aggiunto show_spinner=False ---
+            @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_mapping(_username, _password):
                 # st.info(f"Fetching Farmadati dataset '{DATASET_CODE}'...") # COMMENTATO
                 history = HistoryPlugin()
@@ -424,7 +426,10 @@ elif server_country == "Farmadati":
                      raise RuntimeError(f"Processing failed: {e}")
 
             try:
-                aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
+                # La chiamata a get_farmadati_mapping ora non mostrerà lo spinner di default
+                with st.spinner("Loading Farmadati mapping (this may take a minute)..."): # Spinner manuale
+                    aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
+
                 if not aic_to_image:
                      st.error("Farmadati mapping failed.")
                      st.session_state.renaming_start_processing_fd = False
