@@ -1,5 +1,3 @@
-bundle_images_app = run
-
 import streamlit as st
 import streamlit.components.v1 as components
 import os
@@ -533,3 +531,4 @@ def run():
 
 if __name__ == "__main__":
     run()
+    bundle_images_app = run
