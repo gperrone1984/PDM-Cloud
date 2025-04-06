@@ -14,36 +14,34 @@ from cryptography.fernet import Fernet
 
 st.set_page_config(
     page_title="Bundle & Set Creator",
-    layout="wide",
-    initial_sidebar_state="expanded" # Sidebar visibile
+    # layout="wide", # RIMOSSO per usare il default (centered)
+    initial_sidebar_state="expanded"
 )
 
 # --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
-# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py ***
+# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py (con nuovo background) ***
 st.markdown(
     """
     <style>
     /* Imposta larghezza sidebar e FORZA con !important */
     [data-testid="stSidebar"] > div:first-child {
         width: 550px !important;
-        min-width: 550px !important; /* Aggiunto per robustezza */
-        max-width: 550px !important; /* Aggiunto per robustezza */
+        min-width: 550px !important;
+        max-width: 550px !important;
     }
     /* Nasconde la navigazione automatica generata da Streamlit nella sidebar */
     [data-testid="stSidebarNav"] {
         display: none;
     }
 
-    /* Sfondo per il contenitore principale - FORZATO con !important */
-    /* Target più specifico e !important */
+    /* Sfondo per il contenitore principale - NUOVO COLORE FORZATO */
     div[data-testid="stAppViewContainer"] > section > div.block-container {
-         background-color: #ccd6e0 !important; /* Blu/Grigio chiaro richiesto */
-         padding: 2rem 1rem 1rem 1rem !important; /* Padding */
+         background-color: #d8dfe6 !important; /* NUOVO COLORE */
+         padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
     }
-    /* Fallback meno specifico se il precedente non funziona */
     .main .block-container {
-         background-color: #ccd6e0 !important;
+         background-color: #d8dfe6 !important; /* NUOVO COLORE */
          padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
     }
@@ -72,7 +70,7 @@ st.markdown(
         text-align: center;
         line-height: 1.4;
         transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-        color: #343a40; /* Testo grigio scuro */
+        color: #343a40;
     }
      .app-button-link svg, .app-button-placeholder svg,
      .app-button-link .icon, .app-button-placeholder .icon {
@@ -85,11 +83,11 @@ st.markdown(
 
     /* Colore UNICO per entrambi i bottoni cliccabili (dall'hub) */
     .app-button-link {
-        background-color: #f5faff; /* Azzurro quasi impercettibile */
-        border: 1px solid #c4daee; /* Bordo coordinato */
+        background-color: #f5faff;
+        border: 1px solid #c4daee;
     }
     .app-button-link:hover {
-        background-color: #eaf2ff; /* Azzurro leggermente più scuro */
+        background-color: #eaf2ff;
         border-color: #a9cce3;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08);
         cursor: pointer;
@@ -112,7 +110,7 @@ st.markdown(
     /* Stile per descrizione sotto i bottoni (dall'hub) */
      .app-description {
         font-size: 0.9em;
-        color: #343a40; /* Testo più scuro per leggibilità */
+        color: #343a40;
         padding: 0 15px;
         text-align: justify;
         width: 90%;
@@ -146,12 +144,13 @@ st.markdown(
     .stDownloadButton > button:hover {
         background-color: #97a888;
     }
-    /* Sovrascrive il padding del background se necessario per questa pagina specifica */
-    .main .block-container{
-        padding-top: 1rem !important; /* Usa !important se il background lo sovrascrive */
-        background-color: transparent !important; /* Rendi trasparente lo sfondo del container interno se vuoi vedere quello esterno */
-        border-radius: 0 !important; /* Rimuovi il border-radius interno */
-    }
+    /* Sovrascrive il padding del background per questa pagina specifica */
+    /* Dato che ora è layout centered, potremmo non aver bisogno di sovrascrivere */
+    /* .main .block-container{
+        padding-top: 1rem !important;
+        background-color: transparent !important;
+        border-radius: 0 !important;
+    } */
 
     </style>
     """,
@@ -199,7 +198,9 @@ if st.button("🧹 Clear Cache and Reset Data"):
             del st.session_state[key]
     st.cache_data.clear()
     st.cache_resource.clear()
-    clear_old_data()
+    # Assicurati che la funzione sia definita
+    if 'clear_old_data' in locals():
+        clear_old_data()
     st.success("Data cleared.")
     st.rerun()
 
@@ -277,12 +278,11 @@ if uploaded_file:
         start_time = time.time()
         progress_bar = st.progress(0, text="Starting processing...")
         try:
-            # Assicurati che la funzione clear_old_data sia definita prima di chiamarla
-            # (Dovrebbe esserlo, ma per sicurezza)
-            if 'clear_old_data' not in locals():
-                 def clear_old_data(): # Definizione fallback se non trovata
-                     pass # Implementazione omessa per brevità, usa quella definita sopra
-            # clear_old_data() # Potresti voler pulire prima di iniziare
+            # Assicurati che la funzione sia definita
+            if 'process_file_async' not in locals():
+                 # Aggiungi una definizione vuota o un messaggio di errore se non definita
+                 st.error("Processing function not found!")
+                 st.stop()
 
             zip_data, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(process_file_async(uploaded_file, progress_bar, layout=layout_choice))
             progress_bar.empty()
