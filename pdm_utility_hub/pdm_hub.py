@@ -1,14 +1,14 @@
-# pages/3_Coming_Soon.py
+# pdm_hub.py
 import streamlit as st
 
 st.set_page_config(
-    page_title="Coming Soon",
-    page_icon="🚧",
-    initial_sidebar_state="expanded" # Sidebar visibile
+    page_title="PDM Utility Hub",
+    page_icon="🛠️",
+    layout="centered",
+    initial_sidebar_state="expanded"
 )
 
-# --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
-# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py (con nuovo background) ***
+# --- CSS Globale ---
 st.markdown(
     """
     <style>
@@ -40,7 +40,7 @@ st.markdown(
     }
 
 
-    /* Stile base per i bottoni/placeholder delle app (dall'hub) */
+    /* Stile base per i bottoni/placeholder delle app */
     .app-container {
         display: flex;
         flex-direction: column;
@@ -74,19 +74,19 @@ st.markdown(
         content: "" !important; margin-right: 0 !important;
     }
 
-    /* Colore UNICO per entrambi i bottoni cliccabili (dall'hub) */
+    /* Colore UNICO per entrambi i bottoni cliccabili */
     .app-button-link {
-        background-color: #f5faff;
-        border: 1px solid #c4daee;
+        background-color: #f5faff; /* Azzurro quasi impercettibile */
+        border: 1px solid #c4daee; /* Bordo coordinato */
     }
     .app-button-link:hover {
-        background-color: #eaf2ff;
+        background-color: #eaf2ff; /* Azzurro leggermente più scuro */
         border-color: #a9cce3;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08);
         cursor: pointer;
     }
 
-    /* Stile Placeholder Coming Soon (non cliccabile) (dall'hub) */
+    /* Stile Placeholder Coming Soon (non cliccabile) */
     .app-button-placeholder {
         background-color: #f1f3f5;
         opacity: 0.7;
@@ -100,10 +100,10 @@ st.markdown(
      }
 
 
-    /* Stile per descrizione sotto i bottoni (dall'hub) */
+    /* Stile per descrizione sotto i bottoni */
      .app-description {
         font-size: 0.9em;
-        color: #343a40;
+        color: #343a40; /* Mantenuto scuro per leggibilità */
         padding: 0 15px;
         text-align: justify;
         width: 90%;
@@ -119,9 +119,35 @@ st.markdown(
 st.sidebar.page_link("pdm_hub.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---") # Separatore opzionale
 
+# --- Contenuto Principale Hub ---
+st.title("🛠️ PDM Utility Hub")
+st.markdown("---")
+st.markdown("**Welcome to the Product Data Management Utility Hub. Select an application below to get started.**")
+st.markdown("<br>", unsafe_allow_html=True) # Spazio
 
-# --- Contenuto Pagina ---
-st.title("🚧 Coming Soon")
-st.image("https://static.streamlit.io/examples/owl.jpg", caption="Work in progress!", width=300)
-st.info("This section is currently under development. New utilities will be added here in the future.")
-st.balloons()
+# Layout a 2 colonne per i bottoni principali
+col1, col2 = st.columns(2)
+
+# --- Colonna 1: App Bundle + Coming Soon ---
+with col1:
+    st.markdown('<div class="app-container">', unsafe_allow_html=True)
+    st.markdown('<a href="/Bundle_Set_Images_Creator" target="_self" class="app-button-link" data-testid="stPageLink">📦 Bundle & Set Images Creator</a>', unsafe_allow_html=True)
+    st.markdown('<p class="app-description">Automatically downloads, processes, and organizes images for product bundles and sets.</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="app-container">', unsafe_allow_html=True)
+    st.markdown('<div class="app-button-placeholder"><span class="icon">🚧</span> Coming Soon</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# --- Colonna 2: App Renaming ---
+with col2:
+    st.markdown('<div class="app-container">', unsafe_allow_html=True)
+    st.markdown('<a href="/Repository_Image_Download_Renaming" target="_self" class="app-button-link" data-testid="stPageLink">🖼️ Repository Image Download & Renaming</a>', unsafe_allow_html=True)
+    st.markdown('<p class="app-description">Downloads, resizes, and renames images from selected repositories (e.g. Switzerland, Farmadati).</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# --- Footer Modificato ---
+st.markdown("---")
+st.caption("v.1.0")
