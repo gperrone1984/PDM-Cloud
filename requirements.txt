@@ -1,9 +1,10 @@
 streamlit
 pandas
-requests
-cryptography
-xlsxwriter
-openpyxl
 aiohttp
-zeep
 Pillow
+cryptography
+requests
+openpyxl
+lxml # Spesso necessario per pandas excel e xml parsing
+zeep # Per Farmadati SOAP
+python-multipart # Spesso richiesto da Streamlit per upload
