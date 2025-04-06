@@ -1,8 +1,10 @@
+# pages/2_Repository_Image_Download_Renaming.py
 import streamlit as st
 import pandas as pd
 import csv
 import os
 import zipfile
+import shutil  # <--- AGGIUNTA QUESTA RIGA
 from PIL import Image, ImageOps, ImageChops, UnidentifiedImageError
 from io import BytesIO
 import tempfile
@@ -57,7 +59,6 @@ st.sidebar.page_link("pdm_hub.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---") # Separatore opzionale
 
 # ----- LOGIN RIMOSSO -----
-# Il codice originale dell'app inizia qui sotto
 
 # ----- Sidebar Content (Originale, ma dopo il bottone Hub) -----
 st.sidebar.markdown("<div class='sidebar-title'>PDM Image Download and Renaming App</div>", unsafe_allow_html=True)
@@ -70,23 +71,19 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 st.sidebar.markdown("<div class='server-select-label'>Select Server Country/Image Source</div>", unsafe_allow_html=True)
-# Aggiungi chiave univoca al selectbox
 server_country = st.sidebar.selectbox("", options=["Switzerland", "Farmadati", "coming soon"], index=0, key="server_select_renaming")
 
 # ----- Session State & Clear Cache (Originale) -----
-# Usa chiavi specifiche per questa app
 if "renaming_uploader_key" not in st.session_state:
     st.session_state.renaming_uploader_key = str(uuid.uuid4())
 if "renaming_session_id" not in st.session_state:
      st.session_state.renaming_session_id = str(uuid.uuid4())
 
 if st.button("🧹 Clear Cache and Reset Data"):
-    # Rimuovi solo chiavi specifiche di questa app
     keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
     for key in keys_to_remove:
         if key in st.session_state:
             del st.session_state[key]
-    # Rigenera chiave uploader specifica
     st.session_state.renaming_uploader_key = str(uuid.uuid4())
     st.info("Cache cleared. Please re-upload your file.")
     st.rerun()
@@ -134,7 +131,7 @@ def get_sku_list(uploaded_file_obj, manual_text):
     return unique_sku_list
 
 # ======================================================
-# SECTION: Switzerland (Originale)
+# SECTION: Switzerland (Originale con correzione zip)
 # ======================================================
 if server_country == "Switzerland":
     st.header("Switzerland Server Image Processing")
@@ -150,13 +147,11 @@ if server_country == "Switzerland":
     """)
 
     manual_input = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_switzerland")
-    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key) # Usa chiave specifica
+    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
 
-    # Usa stato specifico per triggerare
     if st.button("Search Images", key="process_switzerland"):
         st.session_state.renaming_start_processing_ch = True
         st.session_state.renaming_processing_done_ch = False
-        # Pulisci stato vecchio
         if "renaming_zip_path_ch" in st.session_state: del st.session_state.renaming_zip_path_ch
         if "renaming_error_path_ch" in st.session_state: del st.session_state.renaming_error_path_ch
 
@@ -165,7 +160,7 @@ if server_country == "Switzerland":
         sku_list = get_sku_list(uploaded_file, manual_input)
         if not sku_list:
             st.warning("Please upload a file or paste some SKUs to process.")
-            st.session_state.renaming_start_processing_ch = False # Resetta trigger
+            st.session_state.renaming_start_processing_ch = False
         else:
             st.info(f"Processing {len(sku_list)} SKUs for Switzerland...")
             error_codes = []
@@ -208,8 +203,6 @@ if server_country == "Switzerland":
                     canvas.save(img_path, "JPEG", quality=95)
                     return True
                 except Exception as e:
-                    # Loggare l'errore potrebbe essere utile, ma evitiamo output console diretto
-                    # print(f"Error processing {original_sku}: {e}")
                     return False
 
             async def fetch_and_process_image(session, product_code, download_folder):
@@ -218,84 +211,61 @@ if server_country == "Switzerland":
                     error_codes.append(product_code)
                     return
                 try:
-                    # Aumenta timeout se necessario
                     async with session.get(image_url, timeout=30) as response:
                         if response.status == 200:
                             content = await response.read()
                             if not content:
-                                error_codes.append(product_code) # Contenuto vuoto
+                                error_codes.append(product_code)
                                 return
-                            # Esegui processamento in thread per non bloccare event loop
                             success = await asyncio.to_thread(process_and_save, product_code, content, download_folder)
                             if not success:
                                 error_codes.append(product_code)
-                        # Non aggiungere a errori per 404, è comune
-                        # elif response.status == 404:
-                        #    error_codes.append(product_code)
-                        elif response.status != 404: # Logga altri errori HTTP
-                            st.warning(f"HTTP {response.status} for {product_code}")
+                        else:
                             error_codes.append(product_code)
-                        else: # 404
-                             error_codes.append(product_code)
-                except asyncio.TimeoutError:
-                     st.warning(f"Timeout for {product_code}")
-                     error_codes.append(product_code)
                 except Exception as e:
-                    st.warning(f"Error for {product_code}: {e}")
                     error_codes.append(product_code)
 
             async def run_processing(download_folder):
-                # Limita connessioni concorrenti
                 connector = aiohttp.TCPConnector(limit=50)
                 async with aiohttp.ClientSession(connector=connector) as session:
                     tasks = [fetch_and_process_image(session, sku, download_folder) for sku in sku_list]
                     processed_count = 0
                     for f in asyncio.as_completed(tasks):
-                        await f # Aspetta completamento task
+                        await f
                         processed_count += 1
-                        # Aggiorna progress bar
-                        progress_val = processed_count / total_count
-                        progress_bar.progress(progress_val, text=f"Processed {processed_count}/{total_count}")
-                progress_bar.progress(1.0, text="Processing complete!")
+                        progress_bar.progress(processed_count / total_count)
+                progress_bar.progress(1.0)
 
 
-            # Esecuzione
-            with st.spinner("Processing Switzerland images..."):
-                # Usa cartella temporanea
+            with st.spinner("Processing images, please wait..."):
                 with tempfile.TemporaryDirectory() as download_folder:
                     asyncio.run(run_processing(download_folder))
 
-                    # Crea ZIP
                     zip_path_ch = None
-                    if any(os.scandir(download_folder)): # Se ci sono file processati
-                         # Crea un file temporaneo per lo zip
+                    if any(os.scandir(download_folder)):
                          with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip_file:
                             zip_path_ch = tmp_zip_file.name
-                         # Crea l'archivio (make_archive aggiunge .zip al nome base)
+                         # Usa shutil.make_archive importato correttamente
                          shutil.make_archive(zip_path_ch[:-4], 'zip', download_folder)
-                         st.session_state["renaming_zip_path_ch"] = zip_path_ch # Salva path completo
+                         st.session_state["renaming_zip_path_ch"] = zip_path_ch
                     else:
                          st.session_state["renaming_zip_path_ch"] = None
 
 
-                    # Crea CSV Errori
                     error_path_ch = None
-                    unique_error_codes = sorted(list(set(error_codes))) # Rimuovi duplicati
-                    if unique_error_codes:
-                        error_df = pd.DataFrame(unique_error_codes, columns=["sku"])
+                    if error_codes:
+                        error_df = pd.DataFrame(sorted(list(set(error_codes))), columns=["sku"])
                         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", newline="", encoding="utf-8-sig") as tmp_error_file:
-                            error_df.to_csv(tmp_error_file, index=False, sep=';') # Usa ;
+                            error_df.to_csv(tmp_error_file, index=False, sep=';')
                             error_path_ch = tmp_error_file.name
                         st.session_state["renaming_error_path_ch"] = error_path_ch
                     else:
                         st.session_state["renaming_error_path_ch"] = None
 
-            # Fine processamento
             st.session_state["renaming_processing_done_ch"] = True
-            st.session_state.renaming_start_processing_ch = False # Resetta trigger
+            st.session_state.renaming_start_processing_ch = False
 
 
-    # Sezione Download Svizzera (Originale)
     if st.session_state.get("renaming_processing_done_ch", False):
         st.markdown("---")
         col1, col2 = st.columns(2)
@@ -306,13 +276,12 @@ if server_country == "Switzerland":
                     st.download_button(
                         label="Download Images",
                         data=f,
-                        # Usa ID sessione specifico per nome file
                         file_name=f"switzerland_images_{st.session_state.renaming_session_id[:6]}.zip",
                         mime="application/zip",
-                        key="dl_ch_zip" # Chiave univoca
+                        key="dl_ch_zip"
                     )
             else:
-                 st.info("No images processed or ZIP not found.")
+                 st.info("No images processed.")
         with col2:
             error_path_dl = st.session_state.get("renaming_error_path_ch")
             if error_path_dl and os.path.exists(error_path_dl):
@@ -322,13 +291,13 @@ if server_country == "Switzerland":
                         data=f_error,
                         file_name=f"errors_switzerland_{st.session_state.renaming_session_id[:6]}.csv",
                         mime="text/csv",
-                        key="dl_ch_err" # Chiave univoca
+                        key="dl_ch_err"
                     )
             else:
-                st.info("No errors found or error file not found.")
+                st.info("No errors found.")
 
 # ======================================================
-# SECTION: Farmadati (Originale con credenziali hardcoded)
+# SECTION: Farmadati (Originale)
 # ======================================================
 elif server_country == "Farmadati":
     st.header("Farmadati Server Image Processing")
@@ -344,13 +313,11 @@ elif server_country == "Farmadati":
     """)
 
     manual_input_fd = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_farmadati")
-    farmadati_file = st.file_uploader("Upload file (column 'sku')", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key) # Usa chiave specifica
+    farmadati_file = st.file_uploader("Upload file (column 'sku')", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
 
-    # Usa stato specifico per triggerare
     if st.button("Search Images", key="process_farmadati"):
          st.session_state.renaming_start_processing_fd = True
          st.session_state.renaming_processing_done_fd = False
-         # Pulisci stato vecchio
          if "renaming_zip_buffer_fd" in st.session_state: del st.session_state.renaming_zip_buffer_fd
          if "renaming_error_data_fd" in st.session_state: del st.session_state.renaming_error_data_fd
 
@@ -359,30 +326,26 @@ elif server_country == "Farmadati":
         sku_list_fd = get_sku_list(farmadati_file, manual_input_fd)
         if not sku_list_fd:
             st.warning("Please upload a file or paste some SKUs to process.")
-            st.session_state.renaming_start_processing_fd = False # Resetta trigger
+            st.session_state.renaming_start_processing_fd = False
         else:
             st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
 
-            # --- Farmadati Credentials and Setup (Hardcoded) ---
             USERNAME = "BDF250621d"
             PASSWORD = "wTP1tvSZ"
             WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
             DATASET_CODE = "TDZ"
 
-            # Funzione cache per mapping (Originale)
-            @st.cache_resource(ttl=3600) # Cache per 1 ora
+            @st.cache_resource(ttl=3600)
             def get_farmadati_mapping(_username, _password):
                 st.info(f"Fetching Farmadati dataset '{DATASET_CODE}'...")
                 history = HistoryPlugin()
                 transport = Transport(cache=InMemoryCache())
-                # Timeout più lunghi per API lenta
                 settings = Settings(strict=False, xml_huge_tree=True, timeout=180)
                 try:
                     client = Client(wsdl=WSDL_URL, wsse=UsernameToken(_username, _password), transport=transport, plugins=[history], settings=settings)
                     response = client.service.GetDataSet(_username, _password, DATASET_CODE, "GETRECORDS", 1)
                 except Exception as e:
                     st.error(f"Farmadati Connection/Fetch Error: {e}")
-                    # Fermati qui se non possiamo ottenere il mapping
                     st.stop()
 
                 if response.CodEsito != "OK" or response.ByteListFile is None:
@@ -401,23 +364,20 @@ elif server_country == "Farmadati":
                             z.extract(xml_file, tmp_dir)
                             xml_full_path = os.path.join(tmp_dir, xml_file)
 
-                        # Parsing XML (Originale)
                         tree = ET.parse(xml_full_path)
                         root = tree.getroot()
                         for record in root.findall('RECORD'):
-                            t218 = record.find('FDI_T218') # AIC
-                            t438 = record.find('FDI_T438') # Image Name
+                            t218 = record.find('FDI_T218')
+                            t438 = record.find('FDI_T438')
                             if t218 is not None and t438 is not None and t218.text and t438.text:
-                                aic = t218.text.strip().lstrip("0") # Pulisci AIC
+                                aic = t218.text.strip().lstrip("0")
                                 if aic: code_to_image[aic] = t438.text.strip()
-
                     st.success(f"Farmadati mapping loaded ({len(code_to_image)} codes).")
                     return code_to_image
                 except Exception as e:
                     st.error(f"Error parsing Farmadati XML: {e}")
                     st.stop()
 
-            # Funzione processamento immagine Farmadati (Originale)
             def process_image_fd(img_bytes):
                 try:
                     img = Image.open(BytesIO(img_bytes))
@@ -427,17 +387,12 @@ elif server_country == "Farmadati":
                     if extrema == (0, 0) or extrema == (255, 255): raise ValueError("Empty image")
 
                     img = ImageOps.exif_transpose(img)
-
-                    # Trim (Originale)
-                    bg = Image.new(img.mode, img.size, img.getpixel((0,0))) # Usa pixel angolo per sfondo? Meglio bianco fisso?
-                    # Usiamo bianco fisso per coerenza
                     bg_white = Image.new(img.mode, img.size, (255, 255, 255))
                     diff = ImageChops.difference(img, bg_white)
                     bbox = diff.getbbox()
                     if bbox: img = img.crop(bbox)
                     if img.width == 0 or img.height == 0: raise ValueError("Empty after trim")
 
-                    # Resize/Canvas (Originale)
                     if img.width > 1000:
                         left = (img.width - 1000) // 2
                         img = img.crop((left, 0, left + 1000, img.height))
@@ -453,30 +408,26 @@ elif server_country == "Farmadati":
                     else:
                         final_img = img
 
-                    # Salva in buffer
                     buffer = BytesIO()
-                    final_img.save(buffer, "JPEG", quality=95) # Qualità 95
+                    final_img.save(buffer, "JPEG", quality=95)
                     buffer.seek(0)
                     return buffer
                 except Exception as e:
                      raise RuntimeError(f"Processing failed: {e}")
 
-
-            # --- Esecuzione Processamento Farmadati (Originale) ---
             try:
                 aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
                 if not aic_to_image:
                      st.error("Farmadati mapping failed.")
-                     st.session_state.renaming_start_processing_fd = False # Resetta trigger
+                     st.session_state.renaming_start_processing_fd = False
                 else:
                     total_fd = len(sku_list_fd)
                     progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
-                    error_list_fd = [] # Lista tuple (sku, reason)
+                    error_list_fd = []
                     processed_files_count = 0
-                    zip_buffer = BytesIO() # ZIP in memoria
+                    zip_buffer = BytesIO()
 
-                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
-                         # Usa requests sincrono come nell'originale
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
                          with requests.Session() as http_session:
                             for i, sku in enumerate(sku_list_fd):
                                 progress_bar_fd.progress((i+1)/total_fd, text=f"Processing {sku} ({i+1}/{total_fd})")
@@ -497,15 +448,13 @@ elif server_country == "Farmadati":
                                 image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={quote(image_name)}"
 
                                 try:
-                                    r = http_session.get(image_url, timeout=45) # Timeout
-                                    r.raise_for_status() # Errore HTTP
+                                    r = http_session.get(image_url, timeout=45)
+                                    r.raise_for_status()
                                     if not r.content:
                                          error_list_fd.append((sku, "Empty download"))
                                          continue
 
-                                    # Processa immagine
                                     processed_buffer = process_image_fd(r.content)
-                                    # Aggiungi a ZIP
                                     zipf.writestr(f"{sku}-h1.jpg", processed_buffer.read())
                                     processed_files_count += 1
 
@@ -513,13 +462,12 @@ elif server_country == "Farmadati":
                                      reason = f"Network Error: {req_e}"
                                      if req_e.response is not None: reason = f"HTTP {req_e.response.status_code}"
                                      error_list_fd.append((sku, reason))
-                                except Exception as proc_e: # Cattura errori da process_image_fd
+                                except Exception as proc_e:
                                      error_list_fd.append((sku, f"Processing Error: {proc_e}"))
 
 
                     progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
 
-                    # Salva risultati nello stato (Originale)
                     if processed_files_count > 0:
                         zip_buffer.seek(0)
                         st.session_state["renaming_zip_buffer_fd"] = zip_buffer
@@ -537,12 +485,10 @@ elif server_country == "Farmadati":
             except Exception as critical_e:
                  st.error(f"Critical Error during Farmadati processing: {critical_e}")
 
-            # Fine processamento
             st.session_state["renaming_processing_done_fd"] = True
-            st.session_state.renaming_start_processing_fd = False # Resetta trigger
+            st.session_state.renaming_start_processing_fd = False
 
 
-    # Sezione Download Farmadati (Originale)
     if st.session_state.get("renaming_processing_done_fd"):
         st.markdown("---")
         col1_fd_dl, col2_fd_dl = st.columns(2)
@@ -554,7 +500,7 @@ elif server_country == "Farmadati":
                     data=zip_data,
                     file_name=f"farmadati_images_{st.session_state.renaming_session_id[:6]}.zip",
                     mime="application/zip",
-                    key="dl_fd_zip" # Chiave univoca
+                    key="dl_fd_zip"
                 )
             else:
                  st.info("No images processed.")
@@ -566,7 +512,7 @@ elif server_country == "Farmadati":
                     data=error_data,
                     file_name=f"errors_farmadati_{st.session_state.renaming_session_id[:6]}.csv",
                     mime="text/csv",
-                    key="dl_fd_err" # Chiave univoca
+                    key="dl_fd_err"
                 )
             else:
                 st.info("No errors found.")
@@ -576,5 +522,4 @@ elif server_country == "Farmadati":
 # ======================================================
 elif server_country == "coming soon":
     st.header("coming soon")
-    st.info("This section is under development.") # Messaggio originale
-    # st.stop() # Rimosso st.stop() implicito alla fine
+    st.info("This section is under development.")
