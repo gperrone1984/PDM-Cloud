@@ -4,7 +4,7 @@ import streamlit as st
 st.set_page_config(
     page_title="PDM Utility Hub",
     page_icon="🛠️",
-    layout="centered",
+    layout="centered", # Manteniamo centrato per il contenuto generale
     initial_sidebar_state="expanded"
 )
 
@@ -21,37 +21,39 @@ st.markdown(
         display: none;
     }
 
-    /* Stile per i bottoni delle app */
-    /* Targetizza il link generato da st.page_link */
-    a[data-testid="stPageLink"] {
-        display: flex; /* Usa flexbox per allineare icona e testo */
-        align-items: center; /* Allinea verticalmente */
-        justify-content: center; /* Allinea orizzontalmente */
-        padding: 1rem 1.5rem; /* Padding interno */
-        background-color: #f0f2f6; /* Colore sfondo bottone */
-        color: #31333F; /* Colore testo */
-        border-radius: 0.5rem; /* Bordi arrotondati */
-        text-decoration: none; /* Rimuovi sottolineatura */
-        font-weight: bold; /* Testo in grassetto */
-        font-size: 1.1rem; /* Dimensione font */
-        border: 1px solid #dcdcdc; /* Bordo leggero */
-        transition: background-color 0.3s ease, box-shadow 0.3s ease; /* Transizione hover */
+    /* Stile per i bottoni delle app (link) */
+    a[data-testid="stPageLink"].app-button { /* Aggiunta classe per specificità */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem 2rem; /* Padding aumentato per renderli più grandi */
+        background-color: #f0f2f6;
+        color: #31333F;
+        border-radius: 0.5rem;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 1.1rem;
+        border: 1px solid #dcdcdc;
+        transition: background-color 0.3s ease, box-shadow 0.3s ease;
         width: 100%; /* Occupa tutta la colonna */
-        min-height: 100px; /* Altezza minima per uniformità */
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* Ombra leggera */
+        min-height: 120px; /* Altezza minima aumentata per uniformità */
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         margin-bottom: 0.75rem; /* Spazio tra bottone e descrizione */
+        text-align: center; /* Centra testo se va a capo */
+        line-height: 1.4; /* Migliora leggibilità se testo va a capo */
     }
-    a[data-testid="stPageLink"]:hover {
-        background-color: #e6eaf1; /* Colore sfondo al hover */
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Ombra più pronunciata al hover */
-        color: #09529c; /* Cambia colore testo al hover (opzionale) */
+    a[data-testid="stPageLink"].app-button:hover {
+        background-color: #e6eaf1;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        color: #09529c;
     }
-    /* Stile per l'icona dentro il bottone (se presente) */
-     a[data-testid="stPageLink"] svg {
-         margin-right: 0.5rem; /* Spazio tra icona e testo */
+    /* Stile per l'icona dentro il bottone */
+     a[data-testid="stPageLink"].app-button svg {
+         margin-right: 0.75rem; /* Più spazio tra icona e testo */
+         flex-shrink: 0; /* Evita che l'icona si restringa */
      }
-     /* Rimuove la freccia standard (già presente ma ri-confermato) */
-    a[data-testid="stPageLink"] > div[data-testid="stText"] > span:before {
+     /* Rimuove la freccia standard */
+    a[data-testid="stPageLink"].app-button > div[data-testid="stText"] > span:before {
         content: "" !important;
         margin-right: 0 !important;
     }
@@ -60,29 +62,24 @@ st.markdown(
      .app-description {
         font-size: 0.9em;
         color: #666;
-        padding: 0 10px; /* Padding laterale */
-        text-align: center; /* Centra descrizione */
-        min-height: 60px; /* Altezza minima per allineare descrizioni */
+        padding: 0 10px;
+        text-align: justify; /* Testo giustificato */
+        min-height: 70px; /* Altezza minima aumentata */
+        margin-bottom: 1.5rem; /* Più spazio sotto la descrizione */
      }
 
-     /* Stile per la sezione Coming Soon */
-     .coming-soon-section {
-         text-align: center;
-         margin-top: 2rem; /* Spazio sopra */
-         padding: 1rem;
-         background-color: #f9f9f9;
-         border-radius: 0.5rem;
-         border: 1px dashed #cccccc; /* Bordo tratteggiato */
-         opacity: 0.8; /* Leggermente trasparente */
+     /* Stile specifico per il bottone Coming Soon (opzionale, per differenziarlo) */
+     a[data-testid="stPageLink"].coming-soon-button {
+         padding: 1rem 1.5rem; /* Leggermente più piccolo? */
+         min-height: 80px;
+         font-size: 1rem;
+         background-color: #e9ecef; /* Colore diverso */
+         border-style: dashed; /* Bordo tratteggiato */
+         opacity: 0.8;
      }
-     .coming-soon-section h4 { /* Titolo più piccolo */
-        font-size: 1.2rem;
-        margin-bottom: 0.5rem;
-        color: #555;
-     }
-     .coming-soon-section p {
-         font-size: 0.85em;
-         color: #777;
+     a[data-testid="stPageLink"].coming-soon-button:hover {
+         opacity: 1;
+         background-color: #dde2e8;
      }
 
     </style>
@@ -105,30 +102,29 @@ col1, col2 = st.columns(2)
 
 # --- Bottone App 1 ---
 with col1:
-    st.page_link(
-        "pages/1_Bundle_Set_Images_Creator.py",
-        label="Bundle & Set Images Creator", # Testo del bottone
-        icon="📦" # Icona opzionale
-        )
+    # Applica la classe CSS al link
+    st.markdown('<a href="/Bundle_Set_Images_Creator" target="_self" class="app-button" data-testid="stPageLink">📦 Bundle & Set Images Creator</a>', unsafe_allow_html=True)
     # Descrizione SOTTO il bottone
     st.markdown('<p class="app-description">Automatically downloads, processes, and organizes images for product bundles and sets based on an Akeneo CSV report.</p>', unsafe_allow_html=True)
 
 
 # --- Bottone App 2 ---
 with col2:
-    st.page_link(
-        "pages/2_Repository_Image_Download_Renaming.py",
-        label="Repository Image Download & Renaming",
-        icon="🖼️"
-        )
+    # Applica la classe CSS al link
+    st.markdown('<a href="/Repository_Image_Download_Renaming" target="_self" class="app-button" data-testid="stPageLink">🖼️ Repository Image Download & Renaming</a>', unsafe_allow_html=True)
     st.markdown('<p class="app-description">Downloads, resizes (1000x1000), and renames images from selected repositories (Switzerland, Farmadati) with the \'-h1\' suffix.</p>', unsafe_allow_html=True)
 
-# --- Sezione Coming Soon (Sotto i bottoni) ---
+# --- Bottone Coming Soon (Sotto, cliccabile) ---
 st.markdown("---") # Separatore
-st.markdown("<div class='coming-soon-section'>", unsafe_allow_html=True)
-st.markdown("#### 🚧 Coming Soon") # Titolo più piccolo
-st.markdown("<p>Future utilities and tools will be available here. Stay tuned for updates!</p>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
+
+# Usiamo colonne per centrare e controllare la larghezza del bottone Coming Soon
+# Ad esempio, una colonna vuota, una per il bottone, una vuota
+col_space1, col_button_cs, col_space2 = st.columns([1, 2, 1]) # Proporzioni (1 parte vuota, 2 parti bottone, 1 parte vuota)
+
+with col_button_cs:
+    # Applica la classe CSS al link e la classe specifica coming-soon
+    st.markdown('<a href="/Coming_Soon" target="_self" class="app-button coming-soon-button" data-testid="stPageLink">🚧 Coming Soon</a>', unsafe_allow_html=True)
+    # Nessuna descrizione sotto Coming Soon
 
 
 # --- Footer Modificato ---
