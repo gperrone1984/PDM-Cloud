@@ -24,7 +24,7 @@ app_choice = st.sidebar.radio(
 
 # Main content
 if app_choice == "Bundle & Set Images Creator":
-    bundle_images_app()
+    bundle_images()
 
 elif app_choice == "Repository Image Download & Renaming":
     repository_images_app()
