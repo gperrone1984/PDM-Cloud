@@ -531,4 +531,4 @@ def run():
 
 if __name__ == "__main__":
     run()
-    bundle_images_app = run
+    bundle_images = run
