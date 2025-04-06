@@ -1,0 +1,10 @@
+streamlit
+pandas
+aiohttp
+Pillow
+cryptography
+requests
+openpyxl
+lxml
+zeep
+python-multipart
