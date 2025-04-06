@@ -26,31 +26,29 @@ st.set_page_config(
 )
 
 # --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
-# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py ***
+# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py (con nuovo background) ***
 st.markdown(
     """
     <style>
     /* Imposta larghezza sidebar e FORZA con !important */
     [data-testid="stSidebar"] > div:first-child {
         width: 550px !important;
-        min-width: 550px !important; /* Aggiunto per robustezza */
-        max-width: 550px !important; /* Aggiunto per robustezza */
+        min-width: 550px !important;
+        max-width: 550px !important;
     }
     /* Nasconde la navigazione automatica generata da Streamlit nella sidebar */
     [data-testid="stSidebarNav"] {
         display: none;
     }
 
-    /* Sfondo per il contenitore principale - FORZATO con !important */
-    /* Target più specifico e !important */
+    /* Sfondo per il contenitore principale - NUOVO COLORE FORZATO */
     div[data-testid="stAppViewContainer"] > section > div.block-container {
-         background-color: #ccd6e0 !important; /* Blu/Grigio chiaro richiesto */
-         padding: 2rem 1rem 1rem 1rem !important; /* Padding */
+         background-color: #d8dfe6 !important; /* NUOVO COLORE */
+         padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
     }
-    /* Fallback meno specifico se il precedente non funziona */
     .main .block-container {
-         background-color: #ccd6e0 !important;
+         background-color: #d8dfe6 !important; /* NUOVO COLORE */
          padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
     }
@@ -79,7 +77,7 @@ st.markdown(
         text-align: center;
         line-height: 1.4;
         transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-        color: #343a40; /* Testo grigio scuro */
+        color: #343a40;
     }
      .app-button-link svg, .app-button-placeholder svg,
      .app-button-link .icon, .app-button-placeholder .icon {
@@ -92,11 +90,11 @@ st.markdown(
 
     /* Colore UNICO per entrambi i bottoni cliccabili (dall'hub) */
     .app-button-link {
-        background-color: #f5faff; /* Azzurro quasi impercettibile */
-        border: 1px solid #c4daee; /* Bordo coordinato */
+        background-color: #f5faff;
+        border: 1px solid #c4daee;
     }
     .app-button-link:hover {
-        background-color: #eaf2ff; /* Azzurro leggermente più scuro */
+        background-color: #eaf2ff;
         border-color: #a9cce3;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08);
         cursor: pointer;
@@ -119,7 +117,7 @@ st.markdown(
     /* Stile per descrizione sotto i bottoni (dall'hub) */
      .app-description {
         font-size: 0.9em;
-        color: #343a40; /* Testo più scuro per leggibilità */
+        color: #343a40;
         padding: 0 15px;
         text-align: justify;
         width: 90%;
@@ -223,6 +221,7 @@ def get_sku_list(uploaded_file_obj, manual_text):
 # SECTION: Switzerland
 # ======================================================
 if server_country == "Switzerland":
+    # ... (Codice sezione Svizzera invariato, incluso il bottone Reset) ...
     st.header("Switzerland Server Image Processing")
     st.markdown("""
     :information_source: **How to use:**
@@ -256,7 +255,6 @@ if server_country == "Switzerland":
 
 
     if st.session_state.get("renaming_start_processing_ch") and not st.session_state.get("renaming_processing_done_ch", False):
-        # ... (codice processamento Svizzera invariato) ...
         sku_list = get_sku_list(uploaded_file, manual_input)
         if not sku_list:
             st.warning("Please upload a file or paste some SKUs to process.")
@@ -366,7 +364,6 @@ if server_country == "Switzerland":
 
 
     if st.session_state.get("renaming_processing_done_ch", False):
-        # ... (codice download Svizzera invariato) ...
         st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
@@ -401,6 +398,7 @@ if server_country == "Switzerland":
 # SECTION: Farmadati
 # ======================================================
 elif server_country == "Farmadati":
+    # ... (Codice sezione Farmadati invariato, incluso il bottone Reset e la funzione get_farmadati_mapping) ...
     st.header("Farmadati Server Image Processing")
     st.markdown("""
     :information_source: **How to use:**
@@ -434,7 +432,6 @@ elif server_country == "Farmadati":
 
 
     if st.session_state.get("renaming_start_processing_fd") and not st.session_state.get("renaming_processing_done_fd", False):
-        # ... (codice processamento Farmadati invariato, inclusa la funzione get_farmadati_mapping con show_spinner=False) ...
         sku_list_fd = get_sku_list(farmadati_file, manual_input_fd)
         if not sku_list_fd:
             st.warning("Please upload a file or paste some SKUs to process.")
