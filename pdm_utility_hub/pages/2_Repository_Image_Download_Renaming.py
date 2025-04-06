@@ -4,7 +4,7 @@ import pandas as pd
 import csv
 import os
 import zipfile
-import shutil  # Import corretto
+import shutil
 from PIL import Image, ImageOps, ImageChops, UnidentifiedImageError
 from io import BytesIO
 import tempfile
@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 import requests
 from zeep import Client, Settings
 from zeep.wsse.username import UsernameToken
-from zeep.transports import Transport # Import corretto
+from zeep.transports import Transport
 from zeep.cache import InMemoryCache
 from zeep.plugins import HistoryPlugin
 
@@ -72,21 +72,11 @@ st.sidebar.markdown("""
 st.sidebar.markdown("<div class='server-select-label'>Select Server Country/Image Source</div>", unsafe_allow_html=True)
 server_country = st.sidebar.selectbox("", options=["Switzerland", "Farmadati", "coming soon"], index=0, key="server_select_renaming")
 
-# ----- Session State & Clear Cache (Originale) -----
+# ----- Session State (Originale) -----
 if "renaming_uploader_key" not in st.session_state:
     st.session_state.renaming_uploader_key = str(uuid.uuid4())
 if "renaming_session_id" not in st.session_state:
      st.session_state.renaming_session_id = str(uuid.uuid4())
-
-if st.button("🧹 Clear Cache and Reset Data"):
-    keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
-    for key in keys_to_remove:
-        if key in st.session_state:
-            del st.session_state[key]
-    st.session_state.renaming_uploader_key = str(uuid.uuid4())
-    st.info("Cache cleared. Please re-upload your file.")
-    st.rerun()
-
 
 # Function to combine SKUs from file and manual input (Originale)
 def get_sku_list(uploaded_file_obj, manual_text):
@@ -130,7 +120,7 @@ def get_sku_list(uploaded_file_obj, manual_text):
     return unique_sku_list
 
 # ======================================================
-# SECTION: Switzerland (Originale con correzione zip)
+# SECTION: Switzerland
 # ======================================================
 if server_country == "Switzerland":
     st.header("Switzerland Server Image Processing")
@@ -144,6 +134,16 @@ if server_country == "Switzerland":
         - **With Codes**
         - **Without Media**
     """)
+
+    # --- Bottone Reset SPOSTATO QUI ---
+    if st.button("🧹 Clear Cache and Reset Data"):
+        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
+        for key in keys_to_remove:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.session_state.renaming_uploader_key = str(uuid.uuid4())
+        st.info("Cache cleared. Please re-upload your file.")
+        st.rerun()
 
     manual_input = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_switzerland")
     uploaded_file = st.file_uploader("Upload file (Excel or CSV)", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
@@ -295,7 +295,7 @@ if server_country == "Switzerland":
                 st.info("No errors found.")
 
 # ======================================================
-# SECTION: Farmadati (Originale con correzione timeout)
+# SECTION: Farmadati
 # ======================================================
 elif server_country == "Farmadati":
     st.header("Farmadati Server Image Processing")
@@ -309,6 +309,16 @@ elif server_country == "Farmadati":
         - **With Codes**
         - **Without Media**
     """)
+
+    # --- Bottone Reset SPOSTATO QUI ---
+    if st.button("🧹 Clear Cache and Reset Data"):
+        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
+        for key in keys_to_remove:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.session_state.renaming_uploader_key = str(uuid.uuid4())
+        st.info("Cache cleared. Please re-upload your file.")
+        st.rerun()
 
     manual_input_fd = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_farmadati")
     farmadati_file = st.file_uploader("Upload file (column 'sku')", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
@@ -335,11 +345,9 @@ elif server_country == "Farmadati":
 
             @st.cache_resource(ttl=3600)
             def get_farmadati_mapping(_username, _password):
-                st.info(f"Fetching Farmadati dataset '{DATASET_CODE}'...")
+                # st.info(f"Fetching Farmadati dataset '{DATASET_CODE}'...") # COMMENTATO
                 history = HistoryPlugin()
-                # CORREZIONE: Timeout nel Transport
                 transport = Transport(cache=InMemoryCache(), timeout=180)
-                # CORREZIONE: Timeout rimosso da Settings
                 settings = Settings(strict=False, xml_huge_tree=True)
                 try:
                     client = Client(wsdl=WSDL_URL, wsse=UsernameToken(_username, _password), transport=transport, plugins=[history], settings=settings)
@@ -352,7 +360,7 @@ elif server_country == "Farmadati":
                     st.error(f"Farmadati API Error: {response.CodEsito} - {response.DescEsito}")
                     st.stop()
 
-                st.info("Parsing Farmadati XML mapping...")
+                # st.info("Parsing Farmadati XML mapping...") # COMMENTATO
                 code_to_image = {}
                 try:
                     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -372,7 +380,7 @@ elif server_country == "Farmadati":
                             if t218 is not None and t438 is not None and t218.text and t438.text:
                                 aic = t218.text.strip().lstrip("0")
                                 if aic: code_to_image[aic] = t438.text.strip()
-                    st.success(f"Farmadati mapping loaded ({len(code_to_image)} codes).")
+                    # st.success(f"Farmadati mapping loaded ({len(code_to_image)} codes).") # COMMENTATO
                     return code_to_image
                 except Exception as e:
                     st.error(f"Error parsing Farmadati XML: {e}")
@@ -448,7 +456,6 @@ elif server_country == "Farmadati":
                                 image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={quote(image_name)}"
 
                                 try:
-                                    # Usa timeout corretto per requests
                                     r = http_session.get(image_url, timeout=45)
                                     r.raise_for_status()
                                     if not r.content:
@@ -485,8 +492,6 @@ elif server_country == "Farmadati":
 
             except Exception as critical_e:
                  st.error(f"Critical Error during Farmadati processing: {critical_e}")
-                 # Mostra traceback per debug se necessario
-                 # st.exception(critical_e)
 
             st.session_state["renaming_processing_done_fd"] = True
             st.session_state.renaming_start_processing_fd = False
