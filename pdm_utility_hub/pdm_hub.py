@@ -15,24 +15,22 @@ st.markdown(
     /* Imposta larghezza sidebar e FORZA con !important */
     [data-testid="stSidebar"] > div:first-child {
         width: 550px !important;
-        min-width: 550px !important; /* Aggiunto per robustezza */
-        max-width: 550px !important; /* Aggiunto per robustezza */
+        min-width: 550px !important;
+        max-width: 550px !important;
     }
     /* Nasconde la navigazione automatica generata da Streamlit nella sidebar */
     [data-testid="stSidebarNav"] {
         display: none;
     }
 
-    /* Sfondo per il contenitore principale - FORZATO con !important */
-    /* Target più specifico e !important */
+    /* Sfondo per il contenitore principale - NUOVO COLORE FORZATO */
     div[data-testid="stAppViewContainer"] > section > div.block-container {
-         background-color: #ccd6e0 !important; /* Blu/Grigio chiaro richiesto */
-         padding: 2rem 1rem 1rem 1rem !important; /* Padding */
+         background-color: #d8dfe6 !important; /* NUOVO COLORE */
+         padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
     }
-    /* Fallback meno specifico se il precedente non funziona */
     .main .block-container {
-         background-color: #ccd6e0 !important;
+         background-color: #d8dfe6 !important; /* NUOVO COLORE */
          padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
     }
@@ -61,7 +59,7 @@ st.markdown(
         text-align: center;
         line-height: 1.4;
         transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-        color: #343a40; /* Testo grigio scuro */
+        color: #343a40;
     }
      .app-button-link svg, .app-button-placeholder svg,
      .app-button-link .icon, .app-button-placeholder .icon {
@@ -74,11 +72,11 @@ st.markdown(
 
     /* Colore UNICO per entrambi i bottoni cliccabili */
     .app-button-link {
-        background-color: #f5faff; /* Azzurro quasi impercettibile */
-        border: 1px solid #c4daee; /* Bordo coordinato */
+        background-color: #f5faff;
+        border: 1px solid #c4daee;
     }
     .app-button-link:hover {
-        background-color: #eaf2ff; /* Azzurro leggermente più scuro */
+        background-color: #eaf2ff;
         border-color: #a9cce3;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08);
         cursor: pointer;
@@ -101,7 +99,7 @@ st.markdown(
     /* Stile per descrizione sotto i bottoni */
      .app-description {
         font-size: 0.9em;
-        color: #343a40; /* Testo più scuro per leggibilità */
+        color: #343a40; /* Mantenuto scuro per leggibilità */
         padding: 0 15px;
         text-align: justify;
         width: 90%;
