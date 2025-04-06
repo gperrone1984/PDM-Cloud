@@ -1,6 +1,1 @@
 streamlit
-pandas
-requests
-cryptography
-asyncio
-aiohttp
