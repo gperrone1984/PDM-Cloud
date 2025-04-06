@@ -1,3 +1,4 @@
+# pages/1_Bundle_Set_Images_Creator.py
 import streamlit as st
 import streamlit.components.v1 as components
 import os
@@ -71,12 +72,10 @@ st.sidebar.page_link("pdm_hub.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---") # Separatore opzionale
 
 # ---------------------- Session State Management ----------------------
-# Usa una chiave specifica se necessario per evitare conflitti futuri
 if "bundle_creator_session_id" not in st.session_state:
     st.session_state["bundle_creator_session_id"] = str(uuid.uuid4())
 
 # ---------------------- LOGIN RIMOSSO ----------------------
-# Il codice originale dell'app inizia qui sotto, senza il blocco if authenticated:
 
 # ---------------------- Begin Main App Code ----------------------
 session_id = st.session_state["bundle_creator_session_id"]
@@ -88,7 +87,6 @@ def clear_old_data():
     zip_path = f"Bundle&Set_{session_id}.zip"
     if os.path.exists(zip_path):
         os.remove(zip_path)
-    # Usa nomi file univoci per sessione anche per i CSV
     missing_csv_path = f"missing_images_{session_id}.csv"
     bundle_list_csv_path = f"bundle_list_{session_id}.csv"
     if os.path.exists(missing_csv_path):
@@ -343,36 +341,35 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 mixed_sets_needed = True
                 bundle_folder = os.path.join(mixed_folder, bundle_code)
                 os.makedirs(bundle_folder, exist_ok=True)
-                for p_code in product_codes: # Usa product_codes qui
+                for p_code in product_codes:
                     if st.session_state.get("fallback_ext") == "NL FR":
-                        result, used_ext = await async_get_image_with_fallback(p_code, session) # Usa p_code
+                        result, used_ext = await async_get_image_with_fallback(p_code, session)
                         if used_ext == "NL FR" and isinstance(result, dict):
                             for lang, image_data in result.items():
                                 suffix = "-p1-fr" if lang == "1-fr" else "-p1-nl"
-                                prod_folder = os.path.join(bundle_folder, "cross-country") # Sempre cross-country per NL/FR
+                                prod_folder = os.path.join(bundle_folder, "cross-country")
                                 os.makedirs(prod_folder, exist_ok=True)
-                                file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg") # Usa p_code
+                                file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
                                 await asyncio.to_thread(save_binary_file, file_path, image_data)
                         elif result:
                             suffix = "-h1"
                             prod_folder = os.path.join(bundle_folder, "cross-country") if used_ext in ["1-fr", "1-de", "1-nl"] else bundle_folder
                             os.makedirs(prod_folder, exist_ok=True)
-                            file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg") # Usa p_code
+                            file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
                             await asyncio.to_thread(save_binary_file, file_path, result)
                         else:
-                            error_list.append((bundle_code, p_code)) # Usa p_code
+                            error_list.append((bundle_code, p_code))
                     else:
-                        image_data, used_ext = await async_get_image_with_fallback(p_code, session) # Usa p_code
+                        image_data, used_ext = await async_get_image_with_fallback(p_code, session)
                         if used_ext in ["1-fr", "1-de", "1-nl"]:
                             bundle_cross_country = True
                         if image_data:
                             prod_folder = os.path.join(bundle_folder, "cross-country") if used_ext in ["1-fr", "1-de", "1-nl"] else bundle_folder
                             os.makedirs(prod_folder, exist_ok=True)
-                            # Salva con estensione trovata per set misti? O solo .jpg? Usiamo .jpg per semplicità
-                            file_path = os.path.join(prod_folder, f"{p_code}.jpg") # Usa p_code
+                            file_path = os.path.join(prod_folder, f"{p_code}.jpg")
                             await asyncio.to_thread(save_binary_file, file_path, image_data)
                         else:
-                            error_list.append((bundle_code, p_code)) # Usa p_code
+                            error_list.append((bundle_code, p_code))
 
             if progress_bar is not None:
                 progress_bar.progress((i + 1) / total)
@@ -405,10 +402,8 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         temp_parent = f"Bundle&Set_temp_{session_id}"
         if os.path.exists(temp_parent): shutil.rmtree(temp_parent)
         os.makedirs(temp_parent, exist_ok=True)
-        # Copia il contenuto della cartella base in una sottocartella "Bundle&Set" dentro temp_parent
         zip_content_folder = os.path.join(temp_parent, "Bundle&Set")
         shutil.copytree(base_folder, zip_content_folder)
-        # Crea l'archivio dalla cartella temp_parent (che contiene Bundle&Set)
         zip_base_name = f"Bundle&Set_archive_{session_id}"
         try:
             shutil.make_archive(zip_base_name, 'zip', temp_parent)
@@ -416,7 +411,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
             if os.path.exists(final_zip_path):
                 with open(final_zip_path, "rb") as zip_file:
                     zip_bytes = zip_file.read()
-                os.remove(final_zip_path) # Pulisci lo zip creato
+                os.remove(final_zip_path)
             else:
                  st.error("Failed to create ZIP archive.")
         except Exception as e:
@@ -424,14 +419,14 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         finally:
             if os.path.exists(temp_parent): shutil.rmtree(temp_parent)
 
-
     return zip_bytes, missing_images_data, missing_images_df, bundle_list_data
 
 # ---------------------- End of Function Definitions ----------------------
 
-# --- Titolo e Descrizione (Originali) ---
-st.title("PDM Bundle Image Creator")
+# --- Titolo Modificato ---
+st.title("PDM Bundle&Set Image Creator")
 
+# --- How to Use Modificato ---
 st.markdown(
     """
     **How to use:**
@@ -443,56 +438,49 @@ st.markdown(
     4. **Choose bundle layout:** (Horizontal, Vertical, or Automatic)
     5. Click **Process CSV** to start the process.
     6. Download the files.
-    7. Before starting a new process, click on **Reset Data**.
+    7. **Before starting a new process, click on Clear Cache and Reset Data.**
     """
 )
 
 # --- Bottone Reset (Originale) ---
 if st.button("🧹 Clear Cache and Reset Data"):
-    # Rimuovi chiavi specifiche di questa app, mantenendo quelle globali se ci fossero
     keys_to_remove = [k for k in st.session_state if k.startswith('bundle_') or k in ['fallback_ext', 'encryption_key', 'zip_data', 'bundle_list_data', 'missing_images_data', 'missing_images_df', 'processing_complete_bundle', 'file_uploader']]
     for key in keys_to_remove:
         if key in st.session_state:
             del st.session_state[key]
-    # Pulisci cache Streamlit
     st.cache_data.clear()
     st.cache_resource.clear()
-    # Pulisci file fisici
     clear_old_data()
     st.success("Data cleared.")
     st.rerun()
 
-# --- Sidebar Content (Originale, ma dopo il bottone Hub) ---
+# --- Sidebar Content Modificato ---
 st.sidebar.header("What This App Does")
 st.sidebar.markdown(
     """
-    - ❓ **Automated Bundle Creation:** Automatically create product bundles by downloading and organizing images.
-    - 📂 **CSV Upload:** Use a Quick Report in Akeneo.
-    - 🔎 **Language Selection:** Choose the language for language specific photos.
-    - ✏️ **Dynamic Processing:** Combine images (double/triple) with proper resizing.
-    - 🔎 **Layout:** Choose the layout for double/triple bundles.
-    - 📁 **Efficient Organization:** Each session crea una cartella unica per evitare conflitti, poi nel file ZIP viene inclusa una cartella generale chiamata "Bundle&Set".
-    - ✏️ **Renames images** using the bundle code and specific suffixes:
-         - NL FR: "-p1-fr" / "-p1-nl"
-         - Standard fallback: "-h1"
-    - ❌ **Error Logging:** Missing images are logged in a CSV.
-    - 📥 **Download:** Get a ZIP with all processed images and reports.
+    - ❓ **Automated Bundle&Set Creation:** Automatically create product bundles and mixed set by downloading and organizing images;
+    - 🔎 **Language Selection:** Choose the language if you have language-specific photos. NL-FR, DE, FR;
+    - 🔎 **Choose the layout for double/triple bundles:** Automatic, Horizontal or Vertical;
+    - ✏️ **Dynamic Processing:** Combine images (double/triple) with proper resizing;
+    - ✏️ **Rename images** using the specific bundle&set code (e.g. -h1, -p1-fr, -p1-nl, etc);
+    - ❌ **Error Logging:** Missing images are logged in a CSV;
+    - 📥 **Download:** Get a ZIP with all processed images and reports;
     - 🌐 **Interactive Preview:** Preview and download individual product images from the sidebar.
     """, unsafe_allow_html=True
 )
 
+# --- Sidebar Preview (Originale) ---
 st.sidebar.header("Product Image Preview")
-product_code_preview = st.sidebar.text_input("Enter Product Code:", key="preview_pzn_bundle") # Chiave univoca
-selected_extension = st.sidebar.selectbox("Select Image Extension:", [str(i) for i in range(1, 19)], key="sidebar_ext_bundle") # Chiave univoca
+product_code_preview = st.sidebar.text_input("Enter Product Code:", key="preview_pzn_bundle")
+selected_extension = st.sidebar.selectbox("Select Image Extension:", [str(i) for i in range(1, 19)], key="sidebar_ext_bundle")
 with st.sidebar:
     col_button, col_spinner = st.columns([2, 1])
-    show_image = col_button.button("Show Image", key="show_preview_bundle") # Chiave univoca
+    show_image = col_button.button("Show Image", key="show_preview_bundle")
     spinner_placeholder = col_spinner.empty()
 
 if show_image and product_code_preview:
     with spinner_placeholder:
         with st.spinner("Processing..."):
-            # Adatta PZN se necessario
             pzn_url = product_code_preview
             if pzn_url.startswith(('1', '0')): pzn_url = f"D{pzn_url}"
             preview_url = f"https://cdn.shop-apotheke.com/images/{pzn_url}-p{selected_extension}.jpg"
@@ -513,7 +501,7 @@ if show_image and product_code_preview:
                 data=image_data,
                 file_name=f"{product_code_preview}-p{selected_extension}.jpg",
                 mime="image/jpeg",
-                key="dl_preview_bundle" # Chiave univoca
+                key="dl_preview_bundle"
             )
         except Exception:
              st.sidebar.error("Could not display preview image.")
@@ -525,11 +513,10 @@ uploaded_file = st.file_uploader("**Upload CSV File**", type=["csv"], key="file_
 if uploaded_file:
     col1, col2 = st.columns(2)
     with col1:
-        fallback_language = st.selectbox("**Choose the language for language specific photos:**", options=["None", "FR", "DE", "NL FR"], index=0, key="lang_select_bundle") # Chiave univoca
+        fallback_language = st.selectbox("**Choose the language for language specific photos:**", options=["None", "FR", "DE", "NL FR"], index=0, key="lang_select_bundle")
     with col2:
-        layout_choice = st.selectbox("**Choose bundle layout:**", options=["Horizontal", "Vertical", "Automatic"], index=2, key="layout_select_bundle") # Chiave univoca
+        layout_choice = st.selectbox("**Choose bundle layout:**", options=["Horizontal", "Vertical", "Automatic"], index=2, key="layout_select_bundle")
 
-    # Imposta stato sessione per fallback
     if fallback_language == "NL FR":
         st.session_state["fallback_ext"] = "NL FR"
     elif fallback_language != "None":
@@ -537,7 +524,7 @@ if uploaded_file:
     else:
         st.session_state["fallback_ext"] = None
 
-    if st.button("Process CSV", key="process_csv_bundle"): # Chiave univoca
+    if st.button("Process CSV", key="process_csv_bundle"):
         start_time = time.time()
         progress_bar = st.progress(0, text="Starting processing...")
         try:
@@ -546,14 +533,13 @@ if uploaded_file:
             elapsed_time = time.time() - start_time
             minutes = int(elapsed_time // 60)
             seconds = int(elapsed_time % 60)
-            st.success(f"Processing finished in {minutes}m {seconds}s.") # Usare success per feedback positivo
+            st.success(f"Processing finished in {minutes}m {seconds}s.")
 
-            # Salva risultati nello stato
             st.session_state["zip_data"] = zip_data
             st.session_state["bundle_list_data"] = bundle_list_data
             st.session_state["missing_images_data"] = missing_images_data
             st.session_state["missing_images_df"] = missing_images_df
-            st.session_state["processing_complete_bundle"] = True # Flag specifico
+            st.session_state["processing_complete_bundle"] = True
 
         except Exception as e:
              progress_bar.empty()
@@ -561,50 +547,49 @@ if uploaded_file:
              st.session_state["processing_complete_bundle"] = False
 
 
-# --- Sezione Download (Originale) ---
+# --- Sezione Download Modificata (Senza Titolo, Verticale) ---
 if st.session_state.get("processing_complete_bundle", False):
     st.markdown("---") # Separatore
-    st.subheader("Download Results") # Titolo sezione
-    dl_col1, dl_col2, dl_col3 = st.columns(3)
 
-    with dl_col1:
-        if st.session_state.get("zip_data"):
-            st.download_button(
-                label="Download Bundle Images (ZIP)",
-                data=st.session_state["zip_data"],
-                file_name=f"BundleSet_{session_id}.zip", # Nome file consistente
-                mime="application/zip",
-                key="dl_zip_bundle" # Chiave univoca
-            )
-        else:
-            st.info("No ZIP file generated.")
+    # Bottone Download ZIP
+    if st.session_state.get("zip_data"):
+        st.download_button(
+            label="Download Bundle Images (ZIP)",
+            data=st.session_state["zip_data"],
+            file_name=f"BundleSet_{session_id}.zip",
+            mime="application/zip",
+            key="dl_zip_bundle_v" # Chiave diversa se necessario
+        )
+    else:
+        st.info("No ZIP file generated.")
 
-    with dl_col2:
-        if st.session_state.get("bundle_list_data"):
+    # Bottone Download Lista Bundle
+    if st.session_state.get("bundle_list_data"):
+        st.download_button(
+            label="Download Bundle List (CSV)",
+            data=st.session_state["bundle_list_data"],
+            file_name=f"bundle_list_{session_id}.csv",
+            mime="text/csv",
+            key="dl_list_bundle_v" # Chiave diversa se necessario
+        )
+    else:
+        st.info("No bundle list generated.")
+
+    # Sezione Immagini Mancanti
+    missing_df = st.session_state.get("missing_images_df")
+    if missing_df is not None and not missing_df.empty:
+        st.markdown("---") # Separatore prima della tabella errori
+        st.warning(f"{len(missing_df)} bundles with missing images:")
+        st.dataframe(missing_df.head(), use_container_width=True) # Mostra tabella
+        # Bottone Download Lista Errori
+        if st.session_state.get("missing_images_data"):
             st.download_button(
-                label="Download Bundle List (CSV)",
-                data=st.session_state["bundle_list_data"],
-                file_name=f"bundle_list_{session_id}.csv", # Nome file consistente
+                label="Download Missing List (CSV)",
+                data=st.session_state["missing_images_data"],
+                file_name=f"missing_images_{session_id}.csv",
                 mime="text/csv",
-                key="dl_list_bundle" # Chiave univoca
+                key="dl_missing_bundle_v" # Chiave diversa se necessario
             )
-        else:
-            st.info("No bundle list generated.")
-
-    with dl_col3:
-        missing_df = st.session_state.get("missing_images_df")
-        if missing_df is not None and not missing_df.empty:
-            st.warning(f"{len(missing_df)} bundles with missing images:")
-            # Mostra solo le prime righe se sono tante
-            st.dataframe(missing_df.head(), use_container_width=True)
-            if st.session_state.get("missing_images_data"):
-                st.download_button(
-                    label="Download Missing List (CSV)",
-                    data=st.session_state["missing_images_data"],
-                    file_name=f"missing_images_{session_id}.csv", # Nome file consistente
-                    mime="text/csv",
-                    key="dl_missing_bundle" # Chiave univoca
-                )
-        elif missing_df is not None: # Esiste ma è vuoto
-             st.success("No missing images reported.")
-        # else: Non mostrare nulla se il df non è disponibile
+    elif missing_df is not None: # Esiste ma è vuoto
+         st.success("No missing images reported.")
+    # else: Non mostrare nulla se il df non è disponibile
