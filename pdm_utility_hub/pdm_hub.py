@@ -24,99 +24,97 @@ st.markdown(
     /* Sfondo per il contenitore principale */
     .main .block-container {
          background-color: #f8f9fa; /* Grigio chiarissimo */
-         padding-top: 2rem;
-         padding-bottom: 2rem;
-         border-radius: 0.5rem; /* Arrotonda anche lo sfondo */
+         padding: 2rem 1rem 1rem 1rem; /* Padding */
+         border-radius: 0.5rem;
     }
     /* Assicura che il padding non venga sovrascritto */
     div.block-container {
-        padding: 2rem 1rem 1rem 1rem; /* Aggiusta padding se necessario */
+        padding: 2rem 1rem 1rem 1rem;
     }
 
 
     /* Stile base per i bottoni/placeholder delle app */
     .app-container {
         display: flex;
-        flex-direction: column; /* Allinea bottone e descrizione verticalmente */
-        align-items: center; /* Centra orizzontalmente nella colonna */
-        margin-bottom: 1.5rem; /* Spazio sotto ogni blocco app */
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 1.5rem;
     }
     .app-button-link, .app-button-placeholder {
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 1.2rem 1.5rem; /* Padding per dimensione */
-        color: #495057; /* Testo grigio scuro */
+        padding: 1.2rem 1.5rem;
         border-radius: 0.5rem;
         text-decoration: none;
         font-weight: bold;
         font-size: 1.05rem;
         border: 1px solid #dee2e6; /* Bordo grigio chiaro */
-        width: 90%; /* Larghezza leggermente ridotta, centrata da app-container */
+        width: 90%;
         min-height: 100px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-        margin-bottom: 0.75rem; /* Spazio tra bottone e descrizione */
+        margin-bottom: 0.75rem;
         text-align: center;
         line-height: 1.4;
-        background-color: #ffffff; /* Sfondo bianco di base */
         transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        color: #343a40; /* Testo grigio scuro per leggibilità su sfondi chiari */
     }
      .app-button-link svg, .app-button-placeholder svg,
-     .app-button-link .icon, .app-button-placeholder .icon { /* Gestisce sia SVG che span icon */
+     .app-button-link .icon, .app-button-placeholder .icon {
          margin-right: 0.6rem;
          flex-shrink: 0;
      }
-    .app-button-link > div[data-testid="stText"] > span:before { /* Rimuove freccia link */
+    .app-button-link > div[data-testid="stText"] > span:before {
         content: "" !important; margin-right: 0 !important;
     }
 
     /* Effetto Hover solo per i link cliccabili */
     .app-button-link:hover {
-        background-color: #e9ecef; /* Grigio molto chiaro al hover */
-        border-color: #ced4da;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        border-color: #adb5bd;
         cursor: pointer;
     }
 
-    /* Colore specifico Bottone 1 (Bundle) - Leggermente diverso */
+    /* Colore specifico Bottone 1 (Bundle) - Azzurro Polvere Chiaro */
     .app-button-bundle {
-        /* background-color: #fdfdfe; */ /* Quasi bianco */
-        /* border-color: #eef; */
+        background-color: #e0fbfc; /* Azzurro molto chiaro */
+        border-color: #c7eeeb;
     }
     .app-button-bundle:hover {
-         /* background-color: #f0f2f8; */
+         background-color: #c7eeeb; /* Leggermente più scuro/saturo */
     }
 
-    /* Colore specifico Bottone 2 (Renaming) - Leggermente diverso */
+    /* Colore specifico Bottone 2 (Renaming) - Verde Acqua Chiaro */
     .app-button-rename {
-         background-color: #f5faff; /* Azzurro quasi impercettibile */
-         /* border-color: #eaf; */
+         background-color: #e6fff0; /* Verde molto chiaro */
+         border-color: #cff0db;
     }
     .app-button-rename:hover {
-        background-color: #eaf2ff;
+        background-color: #cff0db; /* Leggermente più scuro/saturo */
     }
 
     /* Stile Placeholder Coming Soon (non cliccabile) */
     .app-button-placeholder {
-        background-color: #f1f3f5; /* Grigio un po' più scuro */
+        background-color: #f1f3f5;
         opacity: 0.7;
-        cursor: default; /* Cursore non cliccabile */
-        box-shadow: none; /* Senza ombra */
-        color: #868e96; /* Testo più chiaro */
+        cursor: default;
+        box-shadow: none;
+        color: #868e96;
+        border-color: #e9ecef;
     }
      .app-button-placeholder .icon {
-         font-size: 1.5em; /* Icona leggermente più piccola */
+         font-size: 1.5em;
      }
 
 
     /* Stile per descrizione sotto i bottoni */
      .app-description {
         font-size: 0.9em;
-        color: #6c757d; /* Grigio testo */
-        padding: 0 15px; /* Padding laterale aumentato */
+        color: #6c757d;
+        padding: 0 15px;
         text-align: justify;
-        width: 90%; /* Larghezza uguale al bottone */
-        margin: 0 auto; /* Centra la descrizione */
+        width: 90%;
+        margin: 0 auto;
      }
 
     </style>
@@ -166,10 +164,6 @@ with col2:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# --- RIMOSSA Sezione Coming Soon separata ---
-
-
 # --- Footer Modificato ---
-# st.markdown("<br><br>", unsafe_allow_html=True) # Rimuoviamo spazio extra se non serve
 st.markdown("---")
 st.caption("v.1.0")
