@@ -1,5 +1,5 @@
 import streamlit as st
-from bundle_images import bundle_images_app
+from bundle_images import bundle_images
 from repository_images import repository_images_app
 
 # Page configuration
