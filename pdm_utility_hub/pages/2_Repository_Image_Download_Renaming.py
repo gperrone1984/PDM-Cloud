@@ -26,32 +26,131 @@ st.set_page_config(
 )
 
 # --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
-st.markdown("""
+# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py ***
+st.markdown(
+    """
     <style>
-        /* Imposta larghezza sidebar */
-        [data-testid="stSidebar"] > div:first-child {
-            width: 550px;
-        }
-        /* Nasconde la navigazione automatica generata da Streamlit nella sidebar */
-        [data-testid="stSidebarNav"] {
-            display: none;
-        }
+    /* Imposta larghezza sidebar e FORZA con !important */
+    [data-testid="stSidebar"] > div:first-child {
+        width: 550px !important;
+        min-width: 550px !important; /* Aggiunto per robustezza */
+        max-width: 550px !important; /* Aggiunto per robustezza */
+    }
+    /* Nasconde la navigazione automatica generata da Streamlit nella sidebar */
+    [data-testid="stSidebarNav"] {
+        display: none;
+    }
 
-        /* Stili originali dell'app (mantenuti) */
-        .main {background-color: #f9f9f9; }
-        h1, h2, h3 {color: #2c3e50; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;}
-        .sidebar-title {font-size: 32px; font-weight: bold; color: #2c3e50; margin-bottom: 0px;}
-        .sidebar-subtitle {font-size: 18px; color: #2c3e50; margin-top: 10px; margin-bottom: 5px;}
-        .sidebar-desc {font-size: 16px; color: #2c3e50; margin-top: 5px; margin-bottom: 20px;}
-        .stDownloadButton>button {background-color: #3498db; color: black; font-weight: bold; border: none; padding: 10px 24px; font-size: 16px; border-radius: 4px;}
-        .server-select-label {font-size: 20px; font-weight: bold; margin-bottom: 5px;}
-        /* Applica sfondo originale alla sidebar */
-        [data-testid="stSidebar"] > div:first-child {
-             background-color: #ecf0f1;
-             padding: 10px;
-             }
+    /* Sfondo per il contenitore principale - FORZATO con !important */
+    /* Target più specifico e !important */
+    div[data-testid="stAppViewContainer"] > section > div.block-container {
+         background-color: #ccd6e0 !important; /* Blu/Grigio chiaro richiesto */
+         padding: 2rem 1rem 1rem 1rem !important; /* Padding */
+         border-radius: 0.5rem !important;
+    }
+    /* Fallback meno specifico se il precedente non funziona */
+    .main .block-container {
+         background-color: #ccd6e0 !important;
+         padding: 2rem 1rem 1rem 1rem !important;
+         border-radius: 0.5rem !important;
+    }
+
+
+    /* Stile base per i bottoni/placeholder delle app (dall'hub) */
+    .app-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+    .app-button-link, .app-button-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.2rem 1.5rem;
+        border-radius: 0.5rem;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 1.05rem;
+        width: 90%;
+        min-height: 100px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        margin-bottom: 0.75rem;
+        text-align: center;
+        line-height: 1.4;
+        transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        color: #343a40; /* Testo grigio scuro */
+    }
+     .app-button-link svg, .app-button-placeholder svg,
+     .app-button-link .icon, .app-button-placeholder .icon {
+         margin-right: 0.6rem;
+         flex-shrink: 0;
+     }
+    .app-button-link > div[data-testid="stText"] > span:before {
+        content: "" !important; margin-right: 0 !important;
+    }
+
+    /* Colore UNICO per entrambi i bottoni cliccabili (dall'hub) */
+    .app-button-link {
+        background-color: #f5faff; /* Azzurro quasi impercettibile */
+        border: 1px solid #c4daee; /* Bordo coordinato */
+    }
+    .app-button-link:hover {
+        background-color: #eaf2ff; /* Azzurro leggermente più scuro */
+        border-color: #a9cce3;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        cursor: pointer;
+    }
+
+    /* Stile Placeholder Coming Soon (non cliccabile) (dall'hub) */
+    .app-button-placeholder {
+        background-color: #f1f3f5;
+        opacity: 0.7;
+        cursor: default;
+        box-shadow: none;
+        color: #868e96;
+        border: 1px dashed #cccccc;
+    }
+     .app-button-placeholder .icon {
+         font-size: 1.5em;
+     }
+
+
+    /* Stile per descrizione sotto i bottoni (dall'hub) */
+     .app-description {
+        font-size: 0.9em;
+        color: #343a40; /* Testo più scuro per leggibilità */
+        padding: 0 15px;
+        text-align: justify;
+        width: 90%;
+        margin: 0 auto;
+     }
+
+     /* Stili specifici di QUESTA app (Renaming) */
+     /* Sovrascrive il padding del background se necessario per questa pagina specifica */
+     /* Esempio: se questa pagina non deve avere lo sfondo blu/grigio */
+     /*
+     .main .block-container{
+        padding-top: 1rem !important;
+        background-color: #f9f9f9 !important; /* Sfondo originale di questa app */
+        border-radius: 0 !important;
+     }
+     */
+     /* Mantieni gli stili originali dei bottoni di questa app se diversi */
+     .sidebar-title {font-size: 32px; font-weight: bold; color: #2c3e50; margin-bottom: 0px;}
+     .sidebar-subtitle {font-size: 18px; color: #2c3e50; margin-top: 10px; margin-bottom: 5px;}
+     .sidebar-desc {font-size: 16px; color: #2c3e50; margin-top: 5px; margin-bottom: 20px;}
+     .stDownloadButton>button {background-color: #3498db; color: black; font-weight: bold; border: none; padding: 10px 24px; font-size: 16px; border-radius: 4px;}
+     .server-select-label {font-size: 20px; font-weight: bold; margin-bottom: 5px;}
+     [data-testid="stSidebar"] > div:first-child {
+          background-color: #ecf0f1 !important; /* Usa !important per sovrascrivere stile base sidebar */
+          padding: 10px !important;
+     }
+
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True
+)
 
 # --- Bottone per tornare all'Hub nella Sidebar ---
 st.sidebar.page_link("pdm_hub.py", label="**PDM Utility Hub**", icon="🏠")
@@ -69,7 +168,6 @@ st.sidebar.markdown("""
 - 🏷️ Renames with a '-h1' suffix
 </div>
 """, unsafe_allow_html=True)
-# --- Etichetta Modificata ---
 st.sidebar.markdown("<div class='server-select-label'>Select Server Image</div>", unsafe_allow_html=True)
 server_country = st.sidebar.selectbox("", options=["Switzerland", "Farmadati", "coming soon"], index=0, key="server_select_renaming")
 
@@ -81,6 +179,7 @@ if "renaming_session_id" not in st.session_state:
 
 # Function to combine SKUs from file and manual input (Originale)
 def get_sku_list(uploaded_file_obj, manual_text):
+    # ... (codice funzione invariato) ...
     sku_list = []
     df_file = None
     if uploaded_file_obj is not None:
@@ -157,6 +256,7 @@ if server_country == "Switzerland":
 
 
     if st.session_state.get("renaming_start_processing_ch") and not st.session_state.get("renaming_processing_done_ch", False):
+        # ... (codice processamento Svizzera invariato) ...
         sku_list = get_sku_list(uploaded_file, manual_input)
         if not sku_list:
             st.warning("Please upload a file or paste some SKUs to process.")
@@ -266,6 +366,7 @@ if server_country == "Switzerland":
 
 
     if st.session_state.get("renaming_processing_done_ch", False):
+        # ... (codice download Svizzera invariato) ...
         st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
@@ -294,6 +395,7 @@ if server_country == "Switzerland":
                     )
             else:
                 st.info("No errors found.")
+
 
 # ======================================================
 # SECTION: Farmadati
@@ -332,6 +434,7 @@ elif server_country == "Farmadati":
 
 
     if st.session_state.get("renaming_start_processing_fd") and not st.session_state.get("renaming_processing_done_fd", False):
+        # ... (codice processamento Farmadati invariato, inclusa la funzione get_farmadati_mapping con show_spinner=False) ...
         sku_list_fd = get_sku_list(farmadati_file, manual_input_fd)
         if not sku_list_fd:
             st.warning("Please upload a file or paste some SKUs to process.")
@@ -344,7 +447,6 @@ elif server_country == "Farmadati":
             WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
             DATASET_CODE = "TDZ"
 
-            # --- Modifica: Aggiunto show_spinner=False ---
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_mapping(_username, _password):
                 # st.info(f"Fetching Farmadati dataset '{DATASET_CODE}'...") # COMMENTATO
@@ -426,8 +528,7 @@ elif server_country == "Farmadati":
                      raise RuntimeError(f"Processing failed: {e}")
 
             try:
-                # La chiamata a get_farmadati_mapping ora non mostrerà lo spinner di default
-                with st.spinner("Loading Farmadati mapping (this may take a minute)..."): # Spinner manuale
+                with st.spinner("Loading Farmadati mapping (this may take a minute)..."):
                     aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
 
                 if not aic_to_image:
@@ -503,6 +604,7 @@ elif server_country == "Farmadati":
 
 
     if st.session_state.get("renaming_processing_done_fd"):
+        # ... (codice download Farmadati invariato) ...
         st.markdown("---")
         col1_fd_dl, col2_fd_dl = st.columns(2)
         with col1_fd_dl:
@@ -529,6 +631,7 @@ elif server_country == "Farmadati":
                 )
             else:
                 st.info("No errors found.")
+
 
 # ======================================================
 # SECTION: coming soon (Originale)
