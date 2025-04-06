@@ -4,7 +4,7 @@ import pandas as pd
 import csv
 import os
 import zipfile
-import shutil  # <--- AGGIUNTA QUESTA RIGA
+import shutil  # Import corretto
 from PIL import Image, ImageOps, ImageChops, UnidentifiedImageError
 from io import BytesIO
 import tempfile
@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 import requests
 from zeep import Client, Settings
 from zeep.wsse.username import UsernameToken
-from zeep.transports import Transport
+from zeep.transports import Transport # Import corretto
 from zeep.cache import InMemoryCache
 from zeep.plugins import HistoryPlugin
 
@@ -26,7 +26,6 @@ st.set_page_config(
 )
 
 # --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
-# Replicato qui per sicurezza
 st.markdown("""
     <style>
         /* Imposta larghezza sidebar */
@@ -245,7 +244,6 @@ if server_country == "Switzerland":
                     if any(os.scandir(download_folder)):
                          with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip_file:
                             zip_path_ch = tmp_zip_file.name
-                         # Usa shutil.make_archive importato correttamente
                          shutil.make_archive(zip_path_ch[:-4], 'zip', download_folder)
                          st.session_state["renaming_zip_path_ch"] = zip_path_ch
                     else:
@@ -297,7 +295,7 @@ if server_country == "Switzerland":
                 st.info("No errors found.")
 
 # ======================================================
-# SECTION: Farmadati (Originale)
+# SECTION: Farmadati (Originale con correzione timeout)
 # ======================================================
 elif server_country == "Farmadati":
     st.header("Farmadati Server Image Processing")
@@ -339,8 +337,10 @@ elif server_country == "Farmadati":
             def get_farmadati_mapping(_username, _password):
                 st.info(f"Fetching Farmadati dataset '{DATASET_CODE}'...")
                 history = HistoryPlugin()
-                transport = Transport(cache=InMemoryCache())
-                settings = Settings(strict=False, xml_huge_tree=True, timeout=180)
+                # CORREZIONE: Timeout nel Transport
+                transport = Transport(cache=InMemoryCache(), timeout=180)
+                # CORREZIONE: Timeout rimosso da Settings
+                settings = Settings(strict=False, xml_huge_tree=True)
                 try:
                     client = Client(wsdl=WSDL_URL, wsse=UsernameToken(_username, _password), transport=transport, plugins=[history], settings=settings)
                     response = client.service.GetDataSet(_username, _password, DATASET_CODE, "GETRECORDS", 1)
@@ -448,6 +448,7 @@ elif server_country == "Farmadati":
                                 image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={quote(image_name)}"
 
                                 try:
+                                    # Usa timeout corretto per requests
                                     r = http_session.get(image_url, timeout=45)
                                     r.raise_for_status()
                                     if not r.content:
@@ -484,6 +485,8 @@ elif server_country == "Farmadati":
 
             except Exception as critical_e:
                  st.error(f"Critical Error during Farmadati processing: {critical_e}")
+                 # Mostra traceback per debug se necessario
+                 # st.exception(critical_e)
 
             st.session_state["renaming_processing_done_fd"] = True
             st.session_state.renaming_start_processing_fd = False
