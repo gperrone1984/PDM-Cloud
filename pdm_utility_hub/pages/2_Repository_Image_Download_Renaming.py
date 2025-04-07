@@ -11,23 +11,23 @@ import tempfile
 import uuid
 import asyncio
 import aiohttp
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET # Usiamo la libreria standard
 import requests
 from zeep import Client, Settings
 from zeep.wsse.username import UsernameToken
 from zeep.transports import Transport
 from zeep.cache import InMemoryCache
 from zeep.plugins import HistoryPlugin
+# NOTA: import time NON è presente nel codice fornito, quindi non viene aggiunto.
 
 st.set_page_config(
     page_title="Image Download & Renaming",
     layout="centered", # O 'wide'
     initial_sidebar_state="expanded" # Sidebar visibile
-    # Nessuna opzione per forzare tema light, userà il default (light)
 )
 
 # --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
-# *** COPIA ESATTA DEL BLOCCO CSS DA pdm_hub.py (con sfondo #d8dfe6) ***
+# *** CSS CON CORREZIONI PER TITOLO/SOTTOTITOLO SIDEBAR ***
 st.markdown(
     """
     <style>
@@ -130,22 +130,40 @@ st.markdown(
      }
 
      /* Stili specifici di QUESTA app (Renaming) */
-     /* Sovrascrive il padding del background se necessario per questa pagina specifica */
-     /* Esempio: se questa pagina non deve avere lo sfondo blu/grigio */
-     /*
-     .main .block-container{
-        padding-top: 1rem !important;
-        background-color: #f9f9f9 !important; /* Sfondo originale di questa app */
-        border-radius: 0 !important;
+     /* --- CORREZIONE: Aggiunto !important per forzare gli stili --- */
+     .sidebar-title {
+         font-size: 36px !important;      /* Forza dimensione */
+         font-weight: bold !important;   /* Forza grassetto */
+         color: #2c3e50;                 /* Mantiene colore specifico (potrebbe non adattarsi al tema dark) */
+         margin-bottom: 0px;
      }
-     */
-     /* Mantieni gli stili originali dei bottoni di questa app se diversi */
-     /* --- MODIFICA: Aumentata dimensione font titolo sidebar --- */
-     .sidebar-title {font-size: 36px; font-weight: bold; color: #2c3e50; margin-bottom: 0px;}
-     .sidebar-subtitle {font-size: 18px; color: #2c3e50; margin-top: 10px; margin-bottom: 5px;}
-     .sidebar-desc {font-size: 16px; color: #2c3e50; margin-top: 5px; margin-bottom: 20px;}
-     .stDownloadButton>button {background-color: #3498db; color: black; font-weight: bold; border: none; padding: 10px 24px; font-size: 16px; border-radius: 4px;}
-     .server-select-label {font-size: 20px; font-weight: bold; margin-bottom: 5px;}
+     .sidebar-subtitle {
+         font-size: 18px !important;      /* Forza dimensione */
+         font-weight: bold !important;   /* Forza grassetto via CSS */
+         color: #2c3e50;                 /* Mantiene colore specifico */
+         margin-top: 10px;
+         margin-bottom: 5px;
+     }
+     .sidebar-desc {
+         font-size: 16px;
+         color: #2c3e50;                 /* Mantiene colore specifico */
+         margin-top: 5px;
+         margin-bottom: 20px;
+     }
+     .stDownloadButton>button {
+         background-color: #3498db;
+         color: black;
+         font-weight: bold;
+         border: none;
+         padding: 10px 24px;
+         font-size: 16px;
+         border-radius: 4px;
+     }
+     .server-select-label {
+         font-size: 20px;
+         font-weight: bold;
+         margin-bottom: 5px;
+     }
      [data-testid="stSidebar"] > div:first-child {
           background-color: #ecf0f1 !important; /* Usa !important per sovrascrivere stile base sidebar */
           padding: 10px !important;
@@ -163,10 +181,11 @@ st.sidebar.markdown("---") # Separatore opzionale
 # ----- LOGIN RIMOSSO -----
 
 # ----- Sidebar Content -----
-# --- MODIFICA: Titolo sidebar (nessuna modifica al codice, solo CSS) ---
+# Usa la classe CSS '.sidebar-title' definita sopra
 st.sidebar.markdown("<div class='sidebar-title'>PDM Image Download and Renaming App</div>", unsafe_allow_html=True)
-# --- MODIFICA: Sottotitolo in grassetto ---
-st.sidebar.markdown("<div class='sidebar-subtitle'>**What This App Does**</div>", unsafe_allow_html=True)
+# Usa la classe CSS '.sidebar-subtitle'. Il grassetto è ora applicato via CSS.
+# Rimosso '**' dal testo.
+st.sidebar.markdown("<div class='sidebar-subtitle'>What This App Does</div>", unsafe_allow_html=True)
 st.sidebar.markdown("""
 <div class='sidebar-desc'>
 - 📥 Downloads images from the selected server<br>
@@ -250,6 +269,7 @@ if server_country == "Switzerland":
                 del st.session_state[key]
         st.session_state.renaming_uploader_key = str(uuid.uuid4())
         st.info("Cache cleared. Please re-upload your file.")
+        # NOTA: time.sleep(1) non può essere usato qui perché 'time' non è importato
         st.rerun()
 
     manual_input = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_switzerland")
@@ -423,11 +443,15 @@ elif server_country == "Farmadati":
     # --- Bottone Reset SPOSTATO QUI ---
     if st.button("🧹 Clear Cache and Reset Data"):
         keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
+        # Clear the cached Farmadati mapping if the function exists and has clear method
+        if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
+            get_farmadati_mapping.clear()
         for key in keys_to_remove:
             if key in st.session_state:
                 del st.session_state[key]
         st.session_state.renaming_uploader_key = str(uuid.uuid4())
         st.info("Cache cleared. Please re-upload your file.")
+        # NOTA: time.sleep(1) non può essere usato qui perché 'time' non è importato
         st.rerun()
 
     manual_input_fd = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_farmadati")
@@ -448,8 +472,8 @@ elif server_country == "Farmadati":
         else:
             st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
 
-            USERNAME = "BDF250621d"
-            PASSWORD = "wTP1tvSZ"
+            USERNAME = "BDF250621d" # Consider using st.secrets for credentials
+            PASSWORD = "wTP1tvSZ" # Consider using st.secrets for credentials
             WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
             DATASET_CODE = "TDZ"
 
@@ -482,14 +506,23 @@ elif server_country == "Farmadati":
                             z.extract(xml_file, tmp_dir)
                             xml_full_path = os.path.join(tmp_dir, xml_file)
 
-                        tree = ET.parse(xml_full_path)
-                        root = tree.getroot()
-                        for record in root.findall('RECORD'):
-                            t218 = record.find('FDI_T218')
-                            t438 = record.find('FDI_T438')
-                            if t218 is not None and t438 is not None and t218.text and t438.text:
-                                aic = t218.text.strip().lstrip("0")
-                                if aic: code_to_image[aic] = t438.text.strip()
+                        # Efficient XML parsing for large files
+                        context = ET.iterparse(xml_full_path, events=('end',))
+                        for _, elem in context: # Loop starts here
+                             if elem.tag == 'RECORD':
+                                t218 = elem.find('FDI_T218')
+                                t438 = elem.find('FDI_T438')
+                                if t218 is not None and t438 is not None and t218.text and t438.text:
+                                    aic = t218.text.strip().lstrip("0")
+                                    if aic: code_to_image[aic] = t438.text.strip()
+
+                                # Clear processed elements to free memory
+                                elem.clear()
+                                # !!! CICLO WHILE RIMOSSO PER CORREGGERE AttributeError !!!
+                                # while elem.getprevious() is not None:
+                                #     del elem.getparent()[0]
+                        # del context # Questo del era fuori posto qui comunque
+
                     # st.success(f"Farmadati mapping loaded ({len(code_to_image)} codes).") # COMMENTATO
                     return code_to_image
                 except Exception as e:
@@ -511,6 +544,7 @@ elif server_country == "Farmadati":
                     if bbox: img = img.crop(bbox)
                     if img.width == 0 or img.height == 0: raise ValueError("Empty after trim")
 
+                    # Farmadati specific cropping/padding
                     if img.width > 1000:
                         left = (img.width - 1000) // 2
                         img = img.crop((left, 0, left + 1000, img.height))
@@ -518,6 +552,8 @@ elif server_country == "Farmadati":
                         top = (img.height - 1000) // 2
                         img = img.crop((0, top, img.width, top + 1000))
                     if img.width < 1000 or img.height < 1000:
+                        # Ensure RGB before pasting on white canvas
+                        if img.mode != "RGB": img = img.convert("RGB")
                         canvas = Image.new("RGB", (1000, 1000), "white")
                         left = (1000 - img.width) // 2
                         top = (1000 - img.height) // 2
@@ -527,6 +563,8 @@ elif server_country == "Farmadati":
                         final_img = img
 
                     buffer = BytesIO()
+                    # Ensure RGB before saving as JPEG
+                    if final_img.mode != "RGB": final_img = final_img.convert("RGB")
                     final_img.save(buffer, "JPEG", quality=95)
                     buffer.seek(0)
                     return buffer
@@ -548,7 +586,7 @@ elif server_country == "Farmadati":
                     zip_buffer = BytesIO()
 
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-                         with requests.Session() as http_session:
+                         with requests.Session() as http_session: # Use session for potential keep-alive
                             for i, sku in enumerate(sku_list_fd):
                                 progress_bar_fd.progress((i+1)/total_fd, text=f"Processing {sku} ({i+1}/{total_fd})")
                                 clean_sku = str(sku).strip()
@@ -568,8 +606,8 @@ elif server_country == "Farmadati":
                                 image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={quote(image_name)}"
 
                                 try:
-                                    r = http_session.get(image_url, timeout=45)
-                                    r.raise_for_status()
+                                    r = http_session.get(image_url, timeout=45) # Increased timeout
+                                    r.raise_for_status() # Check for HTTP errors
                                     if not r.content:
                                          error_list_fd.append((sku, "Empty download"))
                                          continue
@@ -582,8 +620,10 @@ elif server_country == "Farmadati":
                                      reason = f"Network Error: {req_e}"
                                      if req_e.response is not None: reason = f"HTTP {req_e.response.status_code}"
                                      error_list_fd.append((sku, reason))
-                                except Exception as proc_e:
+                                except RuntimeError as proc_e: # Catch processing errors
                                      error_list_fd.append((sku, f"Processing Error: {proc_e}"))
+                                except Exception as e: # Catch other unexpected errors
+                                     error_list_fd.append((sku, f"Unexpected Error: {e}"))
 
 
                     progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
