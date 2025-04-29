@@ -697,3 +697,4 @@ elif server_country == "Farmadati":
 elif server_country == "coming soon":
     st.header("coming soon")
     st.info("This section is under development.")
+
