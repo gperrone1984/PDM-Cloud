@@ -1,4 +1,3 @@
-# pages/2_Repository_Image_Download_Renaming.py
 import streamlit as st
 import pandas as pd
 import csv
@@ -18,14 +17,19 @@ from zeep.wsse.username import UsernameToken
 from zeep.transports import Transport
 from zeep.cache import InMemoryCache
 from zeep.plugins import HistoryPlugin
-# NOTA: import time NON è presente nel codice fornito, quindi non viene aggiunto.
 
+# Configurazione pagina (DEVE essere la prima operazione)
 st.set_page_config(
-    page_title="Image Download & Renaming",
-    layout="centered", # O 'wide'
-    initial_sidebar_state="expanded" # Sidebar visibile
+    page_title="Repository Image Download & Renaming",
+    page_icon="🖼️",
+    layout="centered"
 )
 
+# Verifica autenticazione
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.switch_page("app.py")
+
+# Contenuto della pagina
 # --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
 # *** CSS CON CORREZIONI PER TITOLO/SOTTOTITOLO SIDEBAR ***
 st.markdown(
@@ -175,7 +179,7 @@ st.markdown(
 )
 
 # --- Bottone per tornare all'Hub nella Sidebar ---
-st.sidebar.page_link("pdm_hub.py", label="**PDM Utility Hub**", icon="🏠")
+st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---") # Separatore opzionale
 
 # ----- LOGIN RIMOSSO -----
@@ -427,7 +431,6 @@ if server_country == "Switzerland":
 # SECTION: Farmadati
 # ======================================================
 elif server_country == "Farmadati":
-    # ... (Codice sezione Farmadati invariato, incluso il bottone Reset e la funzione get_farmadati_mapping) ...
     st.header("Farmadati Server Image Processing")
     st.markdown("""
     :information_source: **How to use:**
@@ -440,10 +443,9 @@ elif server_country == "Farmadati":
         - **Without Media**
     """)
 
-    # --- Bottone Reset SPOSTATO QUI ---
+    # --- Reset Button ---
     if st.button("🧹 Clear Cache and Reset Data"):
         keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
-        # Clear the cached Farmadati mapping if the function exists and has clear method
         if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
             get_farmadati_mapping.clear()
         for key in keys_to_remove:
@@ -451,18 +453,16 @@ elif server_country == "Farmadati":
                 del st.session_state[key]
         st.session_state.renaming_uploader_key = str(uuid.uuid4())
         st.info("Cache cleared. Please re-upload your file.")
-        # NOTA: time.sleep(1) non può essere usato qui perché 'time' non è importato
         st.rerun()
 
     manual_input_fd = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_farmadati")
     farmadati_file = st.file_uploader("Upload file (column 'sku')", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
 
     if st.button("Search Images", key="process_farmadati"):
-         st.session_state.renaming_start_processing_fd = True
-         st.session_state.renaming_processing_done_fd = False
-         if "renaming_zip_buffer_fd" in st.session_state: del st.session_state.renaming_zip_buffer_fd
-         if "renaming_error_data_fd" in st.session_state: del st.session_state.renaming_error_data_fd
-
+        st.session_state.renaming_start_processing_fd = True
+        st.session_state.renaming_processing_done_fd = False
+        if "renaming_zip_buffer_fd" in st.session_state: del st.session_state.renaming_zip_buffer_fd
+        if "renaming_error_data_fd" in st.session_state: del st.session_state.renaming_error_data_fd
 
     if st.session_state.get("renaming_start_processing_fd") and not st.session_state.get("renaming_processing_done_fd", False):
         sku_list_fd = get_sku_list(farmadati_file, manual_input_fd)
@@ -472,14 +472,13 @@ elif server_country == "Farmadati":
         else:
             st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
 
-            USERNAME = "BDF250621d" # Consider using st.secrets for credentials
-            PASSWORD = "wTP1tvSZ" # Consider using st.secrets for credentials
+            USERNAME = "BDF250621d"
+            PASSWORD = "wTP1tvSZ"
             WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
             DATASET_CODE = "TDZ"
 
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_mapping(_username, _password):
-                # st.info(f"Fetching Farmadati dataset '{DATASET_CODE}'...") # COMMENTATO
                 history = HistoryPlugin()
                 transport = Transport(cache=InMemoryCache(), timeout=180)
                 settings = Settings(strict=False, xml_huge_tree=True)
@@ -494,7 +493,6 @@ elif server_country == "Farmadati":
                     st.error(f"Farmadati API Error: {response.CodEsito} - {response.DescEsito}")
                     st.stop()
 
-                # st.info("Parsing Farmadati XML mapping...") # COMMENTATO
                 code_to_image = {}
                 try:
                     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -506,24 +504,15 @@ elif server_country == "Farmadati":
                             z.extract(xml_file, tmp_dir)
                             xml_full_path = os.path.join(tmp_dir, xml_file)
 
-                        # Efficient XML parsing for large files
                         context = ET.iterparse(xml_full_path, events=('end',))
-                        for _, elem in context: # Loop starts here
-                             if elem.tag == 'RECORD':
+                        for _, elem in context:
+                            if elem.tag == 'RECORD':
                                 t218 = elem.find('FDI_T218')
                                 t438 = elem.find('FDI_T438')
                                 if t218 is not None and t438 is not None and t218.text and t438.text:
                                     aic = t218.text.strip().lstrip("0")
                                     if aic: code_to_image[aic] = t438.text.strip()
-
-                                # Clear processed elements to free memory
                                 elem.clear()
-                                # !!! CICLO WHILE RIMOSSO PER CORREGGERE AttributeError !!!
-                                # while elem.getprevious() is not None:
-                                #     del elem.getparent()[0]
-                        # del context # Questo del era fuori posto qui comunque
-
-                    # st.success(f"Farmadati mapping loaded ({len(code_to_image)} codes).") # COMMENTATO
                     return code_to_image
                 except Exception as e:
                     st.error(f"Error parsing Farmadati XML: {e}")
@@ -531,53 +520,68 @@ elif server_country == "Farmadati":
 
             def process_image_fd(img_bytes):
                 try:
-                    img = Image.open(BytesIO(img_bytes))
-                    if img.mode != 'L': gray = img.convert("L")
-                    else: gray = img
-                    extrema = gray.getextrema()
-                    if extrema == (0, 0) or extrema == (255, 255): raise ValueError("Empty image")
-
-                    img = ImageOps.exif_transpose(img)
-                    bg_white = Image.new(img.mode, img.size, (255, 255, 255))
-                    diff = ImageChops.difference(img, bg_white)
-                    bbox = diff.getbbox()
-                    if bbox: img = img.crop(bbox)
-                    if img.width == 0 or img.height == 0: raise ValueError("Empty after trim")
-
-                    # Farmadati specific cropping/padding
-                    if img.width > 1000:
-                        left = (img.width - 1000) // 2
-                        img = img.crop((left, 0, left + 1000, img.height))
-                    if img.height > 1000:
-                        top = (img.height - 1000) // 2
-                        img = img.crop((0, top, img.width, top + 1000))
-                    if img.width < 1000 or img.height < 1000:
-                        # Ensure RGB before pasting on white canvas
-                        if img.mode != "RGB": img = img.convert("RGB")
-                        canvas = Image.new("RGB", (1000, 1000), "white")
-                        left = (1000 - img.width) // 2
-                        top = (1000 - img.height) // 2
-                        canvas.paste(img, (left, top))
-                        final_img = canvas
+                    # Try to open image with PIL (handles most formats)
+                    try:
+                        img = Image.open(BytesIO(img_bytes))
+                    except UnidentifiedImageError:
+                        # If PIL fails, try to handle ASPX response which might be HTML
+                        content_str = img_bytes.decode('utf-8', errors='ignore')
+                        if "System.Web.HttpException" in content_str or "ASP.NET" in content_str:
+                            raise ValueError("ASPX error page received instead of image")
+                        else:
+                            raise ValueError("Unknown image format")
+                    
+                    # Convert to RGB if needed (for JPEG compatibility)
+                    if img.mode not in ('RGB', 'L'):
+                        img = img.convert('RGB')
+                    
+                    # Check for empty/blank images
+                    if img.mode == 'L':
+                        extrema = img.getextrema()
                     else:
-                        final_img = img
-
+                        gray = img.convert('L')
+                        extrema = gray.getextrema()
+                    
+                    if extrema == (0, 0) or extrema == (255, 255):
+                        raise ValueError("Empty/blank image")
+                    
+                    # Auto-rotate based on EXIF
+                    img = ImageOps.exif_transpose(img)
+                    
+                    # Trim whitespace
+                    bg = Image.new(img.mode, img.size, (255, 255, 255))
+                    diff = ImageChops.difference(img, bg)
+                    bbox = diff.getbbox()
+                    if bbox: 
+                        img = img.crop(bbox)
+                    
+                    # Skip if image is empty after trimming
+                    if img.width == 0 or img.height == 0:
+                        raise ValueError("Empty image after trimming")
+                    
+                    # Resize with aspect ratio preservation
+                    img.thumbnail((1000, 1000), Image.LANCZOS)
+                    
+                    # Create white canvas and center the image
+                    canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
+                    offset = ((1000 - img.width) // 2, (1000 - img.height) // 2)
+                    canvas.paste(img, offset)
+                    
+                    # Save to buffer
                     buffer = BytesIO()
-                    # Ensure RGB before saving as JPEG
-                    if final_img.mode != "RGB": final_img = final_img.convert("RGB")
-                    final_img.save(buffer, "JPEG", quality=95)
+                    canvas.save(buffer, "JPEG", quality=95)
                     buffer.seek(0)
                     return buffer
                 except Exception as e:
-                     raise RuntimeError(f"Processing failed: {e}")
+                    raise RuntimeError(f"Image processing failed: {str(e)}")
 
             try:
                 with st.spinner("Loading Farmadati mapping (this may take a minute)..."):
                     aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
 
                 if not aic_to_image:
-                     st.error("Farmadati mapping failed.")
-                     st.session_state.renaming_start_processing_fd = False
+                    st.error("Farmadati mapping failed.")
+                    st.session_state.renaming_start_processing_fd = False
                 else:
                     total_fd = len(sku_list_fd)
                     progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
@@ -586,45 +590,55 @@ elif server_country == "Farmadati":
                     zip_buffer = BytesIO()
 
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-                         with requests.Session() as http_session: # Use session for potential keep-alive
+                        with requests.Session() as http_session:
                             for i, sku in enumerate(sku_list_fd):
                                 progress_bar_fd.progress((i+1)/total_fd, text=f"Processing {sku} ({i+1}/{total_fd})")
-                                clean_sku = str(sku).strip()
-                                if clean_sku.upper().startswith("IT"): clean_sku = clean_sku[2:]
-                                clean_sku = clean_sku.lstrip("0")
+                                original_sku = str(sku).strip()
+                                
+                                # Clean and ensure SKU starts with IT
+                                clean_sku = original_sku.upper()
+                                if not clean_sku.startswith("IT"):
+                                    clean_sku = "IT" + clean_sku.lstrip("0")
+                                else:
+                                    clean_sku = "IT" + clean_sku[2:].lstrip("0")
 
-                                if not clean_sku:
-                                    error_list_fd.append((sku, "Invalid AIC"))
+                                if not clean_sku[2:]:  # Check if there's anything after "IT"
+                                    error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
                                     continue
 
-                                image_name = aic_to_image.get(clean_sku)
+                                image_name = aic_to_image.get(clean_sku[2:])  # Lookup without "IT" prefix
                                 if not image_name:
-                                    error_list_fd.append((sku, "AIC not in mapping"))
+                                    error_list_fd.append((original_sku, "AIC not in mapping"))
                                     continue
 
-                                from urllib.parse import quote
-                                image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={quote(image_name)}"
+                                image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
 
                                 try:
-                                    r = http_session.get(image_url, timeout=45) # Increased timeout
-                                    r.raise_for_status() # Check for HTTP errors
-                                    if not r.content:
-                                         error_list_fd.append((sku, "Empty download"))
-                                         continue
-
-                                    processed_buffer = process_image_fd(r.content)
-                                    zipf.writestr(f"{sku}-h1.jpg", processed_buffer.read())
+                                    response = http_session.get(image_url, timeout=45)
+                                    response.raise_for_status()
+                                    
+                                    # Check content type to detect ASPX errors
+                                    content_type = response.headers.get('Content-Type', '').lower()
+                                    if 'text/html' in content_type or 'text/plain' in content_type:
+                                        if "System.Web.HttpException" in response.text:
+                                            raise ValueError("ASPX error page received")
+                                    
+                                    if not response.content:
+                                        raise ValueError("Empty response")
+                                    
+                                    processed_buffer = process_image_fd(response.content)
+                                    # Ensure filename starts with IT and ends with -h1.jpg
+                                    output_filename = f"{clean_sku}-h1.jpg"
+                                    zipf.writestr(output_filename, processed_buffer.read())
                                     processed_files_count += 1
 
                                 except requests.exceptions.RequestException as req_e:
-                                     reason = f"Network Error: {req_e}"
-                                     if req_e.response is not None: reason = f"HTTP {req_e.response.status_code}"
-                                     error_list_fd.append((sku, reason))
-                                except RuntimeError as proc_e: # Catch processing errors
-                                     error_list_fd.append((sku, f"Processing Error: {proc_e}"))
-                                except Exception as e: # Catch other unexpected errors
-                                     error_list_fd.append((sku, f"Unexpected Error: {e}"))
-
+                                    reason = f"Network Error: {req_e}"
+                                    if hasattr(req_e, 'response') and req_e.response is not None:
+                                        reason = f"HTTP {req_e.response.status_code}"
+                                    error_list_fd.append((original_sku, reason))
+                                except Exception as e:
+                                    error_list_fd.append((original_sku, f"Error: {str(e)}"))
 
                     progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
 
@@ -643,14 +657,12 @@ elif server_country == "Farmadati":
                         st.session_state["renaming_error_data_fd"] = None
 
             except Exception as critical_e:
-                 st.error(f"Critical Error during Farmadati processing: {critical_e}")
+                st.error(f"Critical Error during Farmadati processing: {critical_e}")
 
             st.session_state["renaming_processing_done_fd"] = True
             st.session_state.renaming_start_processing_fd = False
 
-
     if st.session_state.get("renaming_processing_done_fd"):
-        # ... (codice download Farmadati invariato) ...
         st.markdown("---")
         col1_fd_dl, col2_fd_dl = st.columns(2)
         with col1_fd_dl:
@@ -664,7 +676,7 @@ elif server_country == "Farmadati":
                     key="dl_fd_zip"
                 )
             else:
-                 st.info("No images processed.")
+                st.info("No images processed.")
         with col2_fd_dl:
             error_data = st.session_state.get("renaming_error_data_fd")
             if error_data:
