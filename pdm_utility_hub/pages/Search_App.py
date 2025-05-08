@@ -28,9 +28,10 @@ st.markdown(
 )
 
 # 4) Sidebar: only back icon with bold label
-st.sidebar.page_link(
-    "PDM Utility Hub",  # root page title
-    label="🏠 **PDM Utility Hub**"
+# 4) Sidebar: only back icon with bold label
+st.sidebar.markdown(
+    "<a href='/' style='text-decoration:none; font-weight:bold; font-size:1rem;'>🏠 PDM Utility Hub</a>",
+    unsafe_allow_html=True
 )
 
 # 5) Title and instructions
