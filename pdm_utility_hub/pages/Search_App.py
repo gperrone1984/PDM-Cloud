@@ -27,8 +27,11 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 4) Sidebar: back link to Hub with bold text
-st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
+# 4) Sidebar: only back icon with bold label
+st.sidebar.markdown(
+    "[🏠 **PDM Utility Hub**](app.py)",
+    unsafe_allow_html=True
+)
 
 # 5) Title and instructions
 st.title("🔎 Search App")
@@ -36,17 +39,17 @@ st.write(
     "Upload an Excel file and enter up to five search terms. "
     "The search will match terms with any spacing or case variations."
 )
-st.write("Use the Clear cache and data button below to reset inputs.")
+st.write("Use the Clear cache and data button below to reset all inputs.")
 
 # 6) Clear cache and data button
 def clear_cache_and_data():
-    keys = ['uploaded_file'] + [f'term{i}' for i in range(1,6)]
-    for k in keys:
-        st.session_state.pop(k, None)
+    keys_to_clear = ['uploaded_file'] + [f'term{i}' for i in range(1,6)]
+    for key in keys_to_clear:
+        st.session_state.pop(key, None)
 
 st.button("Clear cache and data", on_click=clear_cache_and_data)
 
-# 7) Inputs with explicit keys
+# 7) Inputs
 uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"], key='uploaded_file')
 term_inputs = []
 for i in range(1, 6):
@@ -61,28 +64,30 @@ if st.button("Search and Download"):
     elif not term_inputs:
         st.error("Please enter at least one search term.")
     else:
-        # Build patterns allowing flexible spacing between characters
+        # Build patterns allowing flexible spacing
         patterns = []
         for term in term_inputs:
             compact = re.sub(r"\s+", "", term)
-            char_patterns = ''.join([re.escape(ch) + r"\s*" for ch in compact])
-            patterns.append(char_patterns)
+            # allow any spaces between all characters
+            patterns.append(''.join([re.escape(ch) + r"\s*" for ch in compact]))
         combined_pattern = r"(" + r"|".join(patterns) + r")"
 
-        # Read Excel into DataFrame
+        # Read Excel file
         try:
             df = pd.read_excel(uploaded_file)
         except Exception as e:
             st.error(f"Error reading Excel file: {e}")
             st.stop()
 
-        # Filter across all columns
-        mask = df.astype(str).apply(
-            lambda row: row.str.contains(combined_pattern, case=False, regex=True, na=False)
-        , axis=1).any(axis=1)
+        # Apply search across all columns
+        df_str = df.astype(str)
+        mask_df = df_str.apply(
+            lambda col: col.str.contains(combined_pattern, case=False, regex=True, na=False)
+        )
+        mask = mask_df.any(axis=1)
         filtered = df[mask]
 
-        # Prepare and offer download
+        # Prepare download
         output = BytesIO()
         filtered.to_excel(output, index=False, engine='openpyxl')
         output.seek(0)
