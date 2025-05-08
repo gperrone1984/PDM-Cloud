@@ -38,14 +38,16 @@ st.write(
 )
 st.write("Use the Reset button below to clear any uploaded data and previous inputs.")
 
-# 6) Reset button to clear session state
-if st.button("Reset Search"):
-    for key in ['uploaded_file'] + [f'term{i}' for i in range(1,6)]:
-        if key in st.session_state:
-            del st.session_state[key]
-    st.experimental_rerun()
+# 6) Clear cache and data button
+def clear_cache_and_data():
+    # Clear uploaded file and term inputs
+    keys_to_clear = ['uploaded_file'] + [f'term{i}' for i in range(1,6)]
+    for key in keys_to_clear:
+        st.session_state.pop(key, None)
 
-# 7) Inputs with explicit keys
+st.button("Clear cache and data", on_click=clear_cache_and_data)
+
+# 7) Inputs with explicit keys with explicit keys
 uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"], key='uploaded_file')
 term_inputs = []
 for i in range(1, 6):
