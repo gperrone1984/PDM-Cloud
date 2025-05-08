@@ -28,7 +28,7 @@ st.markdown(
 )
 
 # 4) Sidebar: only back icon
-st.sidebar.page_link("app.py", label="🏠")
+st.sidebar.page_link("app.py", label="🏠 **PDM Utility Hub**")
 
 # 5) Title and instructions
 st.title("🔎 Search App")
