@@ -29,9 +29,8 @@ st.markdown(
 
 # 4) Sidebar: only back icon with bold label
 st.sidebar.page_link(
-    "app",  # refers to the root app.py page
-    label="🏠 **PDM Utility Hub**",
-    icon=None
+    "PDM Utility Hub",  # root page title
+    label="🏠 **PDM Utility Hub**"
 )
 
 # 5) Title and instructions
