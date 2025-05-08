@@ -82,7 +82,7 @@ with col1:
 
         # Active Search App button
     if st.button("🔎 Search App", use_container_width=True):
-        st.switch_page("Search App")
+        st.switch_page("pages/Search_App.py")
     st.markdown("""
         <p class="app-description">
             Extract rows containing specified keywords from uploaded Excel files.
