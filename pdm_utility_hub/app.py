@@ -80,9 +80,9 @@ with col1:
         </p>
     """, unsafe_allow_html=True)
 
-    # Active Search App button
+        # Active Search App button
     if st.button("🔎 Search App", use_container_width=True):
-    st.switch_page("Search_App")
+        st.switch_page("Search_App")
     st.markdown("""
         <p class="app-description">
             Extract rows containing specified keywords from uploaded Excel files.
