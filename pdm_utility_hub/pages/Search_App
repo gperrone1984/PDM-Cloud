@@ -1,96 +1,38 @@
+# pages/Search_App.py
 import streamlit as st
 import pandas as pd
 import re
 from io import BytesIO
 
-# --- Page Configuration (MUST be first) ---
+# 1) Page config
 st.set_page_config(
-    page_title="Excel Search & Filter",
-    page_icon="🔍",
-    layout="centered"
+    page_title="Search App",
+    page_icon="🔎",
+    layout="centered",
 )
 
-# --- Authentication Check ---
+# 2) Auth guard (same as in your Hub)
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
-    st.switch_page("app.py")
+    st.error("You must be logged in to view this page.")
+    st.stop()
 
-# --- Global CSS for Hub Layout & This App Styles ---
-st.markdown(
-    """
+# 3) Hub CSS + sidebar “back” link
+st.markdown("""
     <style>
-    /* Sidebar width */
-    [data-testid="stSidebar"] > div:first-child {
-        width: 550px !important;
-        min-width: 550px !important;
-        max-width: 550px !important;
-        background-color: #ecf0f1 !important;
-        padding: 10px !important;
-    }
-    /* Hide default nav */
-    [data-testid="stSidebarNav"] { display: none; }
-    /* Main background */
-    section.main { background-color: #d8dfe6 !important; }
-    div[data-testid="stAppViewContainer"] > section > div.block-container,
-    .main .block-container {
-         background-color: transparent !important;
-         padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0 !important;
-    }
-    /* Hub button styles */
-    .app-container { display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5rem; }
-    .app-button-link, .app-button-placeholder {
-        display: flex; align-items: center; justify-content: center;
-        padding: 1.2rem 1.5rem; border-radius: 0.5rem;
-        font-weight: bold; font-size: 1.05rem; width: 90%; min-height: 100px;
-        margin-bottom: 0.75rem; text-align: center; line-height: 1.4;
-        transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-        color: #343a40;
-    }
-    .app-button-link { background-color: #f5faff; border: 1px solid #c4daee; }
-    .app-button-link:hover {
-        background-color: #eaf2ff; border-color: #a9cce3; box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-        cursor: pointer;
-    }
-    .app-button-placeholder {
-        background-color: #f1f3f5; opacity: 0.7; cursor: default;
-        box-shadow: none; color: #868e96; border: 1px dashed #cccccc;
-    }
-    .app-description { font-size: 0.9em; color: #343a40; padding: 0 15px;
-        text-align: justify; width: 90%; margin: 0 auto;
-    }
-    /* This App specific sidebar titles */
-    .sidebar-title { font-size: 36px !important; font-weight: bold !important;
-        color: #2c3e50; margin-bottom: 0px;
-    }
-    .sidebar-subtitle { font-size: 18px !important; font-weight: bold !important;
-        color: #2c3e50; margin-top: 10px; margin-bottom: 5px;
-    }
-    .sidebar-desc { font-size: 16px; color: #2c3e50; margin: 5px 0 20px;
-    }
-    .stDownloadButton>button {
-        background-color: #3498db; color: black; font-weight: bold;
-        border: none; padding: 10px 24px; font-size: 16px; border-radius: 4px;
-    }
-    .server-select-label { font-size: 20px; font-weight: bold; margin-bottom: 5px;
-    }
+      /* hide default nav/sidebar, force your Hub styles */
+      section[data-testid="stSidebar"] { width: 300px !important; }
     </style>
-    """,
-    unsafe_allow_html=True
-)
+""", unsafe_allow_html=True)
 
-# --- Sidebar Hub Link ---
-st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
-st.sidebar.markdown("---")
+# Link back to the Hub
+st.sidebar.page_link("app.py", label="🏠 Back to PDM Utility Hub")
 
-# --- Sidebar Titles & Description ---
-st.sidebar.markdown('<div class="sidebar-title">Excel Search</div>', unsafe_allow_html=True)
-st.sidebar.markdown('<div class="sidebar-subtitle">Filter by Keywords</div>', unsafe_allow_html=True)
-st.sidebar.markdown('<div class="sidebar-desc">Upload your file and enter up to five search terms including variations (e.g., biossido di titanio, E171).</div>', unsafe_allow_html=True)
+# 4) App title + instructions
+st.title("🔎 Search App")
+st.write("Upload an Excel file, enter up to five search terms (e.g. “biossido di titanio”, “E171”), then click Search and Filter.")
 
-# --- File Uploader ---
+# 5) File uploader + term inputs
 uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"])
-
-# --- Search Term Inputs ---
 term1 = st.text_input("Term 1")
 term2 = st.text_input("Term 2")
 term3 = st.text_input("Term 3")
@@ -98,13 +40,13 @@ term4 = st.text_input("Term 4")
 term5 = st.text_input("Term 5")
 
 # Build regex pattern
-terms = [t.strip() for t in [term1, term2, term3, term4, term5] if t.strip()]
+terms = [t.strip() for t in (term1, term2, term3, term4, term5) if t.strip()]
 pattern = None
 if terms:
     escaped = [re.escape(t).replace(r"\ ", r"\s*") for t in terms]
     pattern = r"(" + r"|".join(escaped) + r")"
 
-# --- Search & Download Logic ---
+# 6) Search button logic
 if st.button("Search and Filter"):
     if not uploaded_file:
         st.error("Please upload an Excel file first.")
@@ -117,26 +59,21 @@ if st.button("Search and Filter"):
             st.error(f"Error reading Excel file: {e}")
         else:
             if 'Long description' not in df.columns:
-                st.error("The uploaded file does not contain a 'Long description' column.")
+                st.error("No column named 'Long description' found.")
             else:
-                mask = df['Long description'].astype(str).str.contains(pattern, case=False, regex=True, na=False)
+                mask = df['Long description'].astype(str)\
+                         .str.contains(pattern, case=False, regex=True, na=False)
                 filtered = df[mask]
-                st.write(f"Filtered rows: {len(filtered)}")
+                st.write(f"Rows found: {len(filtered)}")
                 st.dataframe(filtered)
 
+                # download button
                 towrite = BytesIO()
                 filtered.to_excel(towrite, index=False, engine='openpyxl')
                 towrite.seek(0)
                 st.download_button(
-                    label="Download filtered Excel",
+                    "Download filtered Excel",
                     data=towrite,
                     file_name="filtered_results.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-
-# --- Footer Instructions ---
-st.markdown("---")
-st.markdown("**Instructions:**")
-st.markdown("1. Upload your Excel file with a column named 'Long description'.")
-st.markdown("2. Enter up to five search terms (e.g., biossido di titanio, E171).")
-st.markdown("3. Click 'Search and Filter' to view and download matching rows.")
