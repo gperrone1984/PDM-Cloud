@@ -1,11 +1,11 @@
 import streamlit as st
 import hashlib
 
-# Inizializza autenticazione
+# Initialize authentication
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
-# Configurazione pagina
+# Page configuration
 st.set_page_config(
     page_title="PDM Utility Hub",
     page_icon="🛠️",
@@ -13,17 +13,17 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Forza tema chiaro
+# Force light theme
 st._config.set_option("theme.base", "light")
 
-# Nascondi sidebar
+# Hide default sidebar
 st.markdown("""
     <style>
         section[data-testid="stSidebar"] { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# Funzione autenticazione
+# Authentication function
 def authenticate(username: str, password: str) -> bool:
     try:
         input_hash = hashlib.sha256(password.encode()).hexdigest()
@@ -33,7 +33,7 @@ def authenticate(username: str, password: str) -> bool:
         st.error("Authentication system error")
         return False
 
-# Mostra form di login se non autenticato
+# Show login form if not authenticated
 if not st.session_state.authenticated:
     with st.container():
         st.markdown("""
@@ -63,12 +63,12 @@ if not st.session_state.authenticated:
 
     st.stop()
 
-# --- CONTENUTO PRINCIPALE ---
+# --- MAIN CONTENT ---
 st.title("🛠️ PDM Utility Hub")
 st.markdown("---")
 st.markdown("**Welcome to the Product Data Management Utility Hub. Select an application below to get started.**")
 
-# Layout a due colonne
+# Two-column layout
 col1, col2 = st.columns(2)
 
 with col1:
@@ -80,10 +80,16 @@ with col1:
         </p>
     """, unsafe_allow_html=True)
 
+    # Placeholder for future app: Search App
+    if False:
+        pass  # placeholder to maintain layout
     st.markdown("""
-        <div class="app-button-placeholder">
-            🚧 Coming Soon
+        <div class="app-button-link">
+            🔎 Search App (Coming Soon)
         </div>
+        <p class="app-description">
+            Extract rows containing specified keywords from uploaded Excel files.
+        </p>
     """, unsafe_allow_html=True)
 
 with col2:
@@ -98,12 +104,10 @@ with col2:
 st.markdown("---")
 st.caption("v1.0 | Secure Access System")
 
-# --- STILE CSS PERSONALIZZATO ---
+# --- Custom CSS ---
 st.markdown("""
     <style>
-    body {
-        background-color: #f5f5f5 !important;
-    }
+    body { background-color: #f5f5f5 !important; }
 
     .app-button-placeholder {
         background-color: #f8fafc !important;
@@ -118,6 +122,26 @@ st.markdown("""
         align-items: center !important;
         justify-content: center !important;
         opacity: 0.7;
+    }
+
+    .app-button-link {
+        background-color: #f5faff;
+        border: 1px solid #c4daee;
+        padding: 1.2rem;
+        border-radius: 0.5rem;
+        font-weight: bold;
+        font-size: 1.05rem;
+        width: 90%;
+        text-align: center;
+        margin-bottom: 0.75rem;
+        transition: background-color 0.2s ease;
+        color: #343a40;
+    }
+    .app-button-link:hover {
+        background-color: #eaf2ff;
+        border-color: #a9cce3;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        cursor: pointer;
     }
 
     .app-description {
@@ -139,7 +163,6 @@ st.markdown("""
         font-size: 1.05rem !important;
         transition: all 0.2s ease !important;
     }
-
     button[kind="secondary"]:hover {
         background-color: #bae6fd !important;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08) !important;
