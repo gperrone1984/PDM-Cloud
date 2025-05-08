@@ -80,13 +80,10 @@ with col1:
         </p>
     """, unsafe_allow_html=True)
 
-    # Placeholder for future app: Search App
-    if False:
-        pass  # placeholder to maintain layout
+    # Active Search App button
+    if st.button("🔎 Search App", use_container_width=True):
+        st.switch_page("pages/Search_App.py")
     st.markdown("""
-        <div class="app-button-link">
-            🔎 Search App (Coming Soon)
-        </div>
         <p class="app-description">
             Extract rows containing specified keywords from uploaded Excel files.
         </p>
