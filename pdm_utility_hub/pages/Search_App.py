@@ -27,8 +27,8 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 4) Sidebar: only back icon
-st.sidebar.page_link("app.py", label="🏠")
+# 4) Sidebar: back link to Hub with bold text
+st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 
 # 5) Title and instructions
 st.title("🔎 Search App")
@@ -36,18 +36,17 @@ st.write(
     "Upload an Excel file and enter up to five search terms. "
     "The search will match terms with any spacing or case variations."
 )
-st.write("Use the Reset button below to clear any uploaded data and previous inputs.")
+st.write("Use the Clear cache and data button below to reset inputs.")
 
 # 6) Clear cache and data button
 def clear_cache_and_data():
-    # Clear uploaded file and term inputs
-    keys_to_clear = ['uploaded_file'] + [f'term{i}' for i in range(1,6)]
-    for key in keys_to_clear:
-        st.session_state.pop(key, None)
+    keys = ['uploaded_file'] + [f'term{i}' for i in range(1,6)]
+    for k in keys:
+        st.session_state.pop(k, None)
 
 st.button("Clear cache and data", on_click=clear_cache_and_data)
 
-# 7) Inputs with explicit keys with explicit keys
+# 7) Inputs with explicit keys
 uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"], key='uploaded_file')
 term_inputs = []
 for i in range(1, 6):
@@ -70,25 +69,20 @@ if st.button("Search and Download"):
             patterns.append(char_patterns)
         combined_pattern = r"(" + r"|".join(patterns) + r")"
 
-        # Read Excel
+        # Read Excel into DataFrame
         try:
             df = pd.read_excel(uploaded_file)
         except Exception as e:
             st.error(f"Error reading Excel file: {e}")
             st.stop()
 
-        # Validate column
-        if 'Long description' not in df.columns:
-            st.error("No column named 'Long description' found.")
-            st.stop()
-
-        # Filter rows
-        mask = df['Long description'].astype(str).str.contains(
-            combined_pattern, case=False, regex=True, na=False
-        )
+        # Filter across all columns
+        mask = df.astype(str).apply(
+            lambda row: row.str.contains(combined_pattern, case=False, regex=True, na=False)
+        , axis=1).any(axis=1)
         filtered = df[mask]
 
-        # Prepare download
+        # Prepare and offer download
         output = BytesIO()
         filtered.to_excel(output, index=False, engine='openpyxl')
         output.seek(0)
