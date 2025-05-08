@@ -16,7 +16,7 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
     st.error("You must be logged in to view this page.")
     st.stop()
 
-# 3) Custom CSS to hide default nav and only show back icon
+# 3) Custom CSS to hide default nav entries
 st.markdown(
     """
     <style>
@@ -27,7 +27,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 4) Sidebar: only back link
+# 4) Sidebar: only back icon
 st.sidebar.page_link("app.py", label="🏠")
 
 # 5) Title and instructions
@@ -36,23 +36,25 @@ st.write("Upload an Excel file and enter up to five search terms. Click 'Search 
 
 # 6) Inputs
 uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"])
-cols = []
-terms = []
+terms_patterns = []
 for i in range(1, 6):
-    term = st.text_input(f"Term {i}")
-    if term.strip():
-        # escape and allow flexible spacing
-        terms.append(re.escape(term.strip()).replace(r"\ ", r"\s*"))
+    term_input = st.text_input(f"Term {i}")
+    if term_input.strip():
+        # Remove all spaces, then allow flexible whitespace between all characters
+        clean = re.sub(r"\s+", "", term_input)
+        # Build pattern: each char followed by optional whitespace
+        chars_pattern = "".join([re.escape(c) + r"\s*" for c in clean])
+        terms_patterns.append(chars_pattern)
 
-# 7) Button logic
+# 7) Search and download button
 if st.button("Search and Download"):
     if not uploaded_file:
         st.error("Please upload an Excel file first.")
-    elif not terms:
+    elif not terms_patterns:
         st.error("Please enter at least one search term.")
     else:
-        # compile pattern that matches any of the terms
-        pattern = r"(" + r"|".join(terms) + r")"
+        # Combine term patterns into one regex
+        pattern = r"(" + r"|".join(terms_patterns) + r")"
         try:
             df = pd.read_excel(uploaded_file)
         except Exception as e:
@@ -63,11 +65,11 @@ if st.button("Search and Download"):
             st.error("No column named 'Long description' found.")
             st.stop()
 
-        # filter rows
+        # Filter rows by regex (case-insensitive)
         mask = df['Long description'].astype(str).str.contains(pattern, case=False, regex=True, na=False)
         filtered = df[mask]
 
-        # prepare download
+        # Prepare and offer download
         towrite = BytesIO()
         filtered.to_excel(towrite, index=False, engine='openpyxl')
         towrite.seek(0)
