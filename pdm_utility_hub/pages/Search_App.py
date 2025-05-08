@@ -28,37 +28,42 @@ st.markdown(
 )
 
 # 4) Sidebar: only back icon
-st.sidebar.page_link("app.py", label="🏠 **PDM Utility Hub**")
+st.sidebar.page_link("app.py", label="🏠")
 
 # 5) Title and instructions
 st.title("🔎 Search App")
 st.write(
     "Upload an Excel file and enter up to five search terms. "
-    "The search will match terms with any spacing or case variations. "
-    "Click 'Search and Download' to get your filtered results as an Excel file."
+    "The search will match terms with any spacing or case variations."
 )
+st.write("Use the Reset button below to clear any uploaded data and previous inputs.")
 
-# 6) Inputs
-uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"])
+# 6) Reset button to clear session state
+if st.button("Reset Search"):
+    for key in ['uploaded_file'] + [f'term{i}' for i in range(1,6)]:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.experimental_rerun()
+
+# 7) Inputs with explicit keys
+uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"], key='uploaded_file')
 term_inputs = []
 for i in range(1, 6):
-    term = st.text_input(f"Term {i}")
+    term = st.text_input(f"Term {i}", key=f'term{i}')
     if term and term.strip():
         term_inputs.append(term.strip())
 
-# 7) Button logic
+# 8) Search and download button
 if st.button("Search and Download"):
     if not uploaded_file:
         st.error("Please upload an Excel file first.")
     elif not term_inputs:
         st.error("Please enter at least one search term.")
     else:
-        # Build patterns allowing flexible spacing between all characters
+        # Build patterns allowing flexible spacing between characters
         patterns = []
         for term in term_inputs:
-            # remove existing spaces
             compact = re.sub(r"\s+", "", term)
-            # add \s* after each char
             char_patterns = ''.join([re.escape(ch) + r"\s*" for ch in compact])
             patterns.append(char_patterns)
         combined_pattern = r"(" + r"|".join(patterns) + r")"
