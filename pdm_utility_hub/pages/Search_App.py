@@ -15,7 +15,7 @@ st.set_page_config(
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# 3) Global CSS: hide default nav/sidebar items, match Hub style
+# 3) Global CSS
 st.markdown(
     """
     <style>
@@ -39,7 +39,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 4) Sidebar: Hub button only
+# 4) Sidebar
 st.sidebar.page_link(
     "app.py",
     label="**PDM Utility Hub**",
@@ -89,7 +89,13 @@ if st.button("Search and Download"):
         # try reading the file (Excel or CSV)
         try:
             if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file, dtype=str, keep_default_na=False)
+                df = pd.read_csv(
+                    uploaded_file,
+                    sep=None,  # let pandas guess the delimiter
+                    engine='python',  # more robust parsing
+                    dtype=str,
+                    keep_default_na=False
+                )
             else:
                 df = pd.read_excel(uploaded_file, dtype=str)
         except Exception as e:
