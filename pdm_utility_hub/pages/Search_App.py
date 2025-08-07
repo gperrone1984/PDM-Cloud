@@ -78,11 +78,13 @@ if st.button("Search and Download"):
     elif not term_inputs:
         st.error("Please enter at least one search term.")
     else:
-        # build pattern allowing any spaces between chars
+        # build pattern allowing any spaces between characters,
+        # and match only the exact combination (not partial matches)
         patterns = []
         for term in term_inputs:
             compact = re.sub(r"\s+", "", term)
-            patterns.append(''.join([re.escape(c)+r"\s*" for c in compact]))
+            pattern = r"(?<!\w)" + ''.join([re.escape(c) + r"\s*" for c in compact]) + r"(?!\w)"
+            patterns.append(pattern)
         combined = r"(" + r"|".join(patterns) + r")"
 
         try:
