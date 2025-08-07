@@ -72,6 +72,8 @@ for i in range(1, 11):
         term_inputs.append(term.strip())
 
 # 8) Search & download
+progress_placeholder = st.empty()  # <-- Qui apparirà la barra
+
 if st.button("Search and Download"):
     if not uploaded_file:
         st.error("Please upload an Excel file first.")
@@ -92,16 +94,31 @@ if st.button("Search and Download"):
             st.error(f"Error reading file: {e}")
             st.stop()
 
-        # convert to string and fill NaNs
         df_str = df.astype(str).fillna("")
 
-        # row-wise search: unisce tutte le celle di ogni riga in un'unica stringa
-        row_text = df_str.apply(lambda row: ' '.join(row.values.astype(str)), axis=1)
-        mask = row_text.str.contains(combined, case=False, regex=True, na=False)
+        # Inserisci la barra dentro al placeholder (sotto il bottone)
+        progress_bar = progress_placeholder.progress(0, text="Processing rows...")
 
-        result = df[mask]
+        total_rows = df_str.shape[0]
+        matches = []
 
-        # download result
+        for idx, (_, row) in enumerate(df_str.iterrows()):
+            row_text = ' '.join(row.values.astype(str))
+            if re.search(combined, row_text, flags=re.IGNORECASE):
+                matches.append(True)
+            else:
+                matches.append(False)
+
+            # aggiorna ogni 100 righe o all’ultima
+            if idx % 100 == 0 or idx == total_rows - 1:
+                progress = (idx + 1) / total_rows
+                progress_bar.progress(progress, text=f"Processing row {idx + 1} of {total_rows}")
+
+        result = df[pd.Series(matches)]
+
+        progress_placeholder.empty()  # rimuove la barra
+
+        # download
         buf = BytesIO()
         result.to_excel(buf, index=False, engine='openpyxl')
         buf.seek(0)
@@ -111,3 +128,4 @@ if st.button("Search and Download"):
             file_name="filtered_results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
