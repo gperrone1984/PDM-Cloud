@@ -72,11 +72,9 @@ for i in range(1, 11):
         term_inputs.append(term.strip())
 
 # Optional: custom filename input
-custom_filename = st.text_input(
-    "Optional: Enter a custom name for the output Excel file (without extension)",
-    value="filtered_results",
-    key='custom_filename'
-)
+st.markdown("**Optional: Enter a custom name for the output Excel file (without extension)**")
+custom_filename = st.text_input("", value="filtered_results", key='custom_filename')
+
 
 # 8) Search & download
 progress_placeholder = st.empty()
