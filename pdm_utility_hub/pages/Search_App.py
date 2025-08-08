@@ -57,7 +57,7 @@ st.write("Click 'Clear cache and data' to reset inputs, then 'Search and Downloa
 
 # 6) Clear cache and data
 def clear_all():
-    keys = ['uploaded_file'] + [f'term{i}' for i in range(1, 11)]
+    keys = ['uploaded_file'] + [f'term{i}' for i in range(1, 11)] + ['custom_filename']
     for k in keys:
         st.session_state.pop(k, None)
 
@@ -71,8 +71,15 @@ for i in range(1, 11):
     if term and term.strip():
         term_inputs.append(term.strip())
 
+# Optional: custom filename input
+custom_filename = st.text_input(
+    "Optional: Enter a custom name for the output Excel file (without extension)",
+    value="filtered_results",
+    key='custom_filename'
+)
+
 # 8) Search & download
-progress_placeholder = st.empty()  # <-- Qui apparirà la barra
+progress_placeholder = st.empty()
 
 if st.button("Search and Download"):
     if not uploaded_file:
@@ -96,9 +103,7 @@ if st.button("Search and Download"):
 
         df_str = df.astype(str).fillna("")
 
-        # Inserisci la barra dentro al placeholder (sotto il bottone)
         progress_bar = progress_placeholder.progress(0, text="Processing rows...")
-
         total_rows = df_str.shape[0]
         matches = []
 
@@ -109,23 +114,23 @@ if st.button("Search and Download"):
             else:
                 matches.append(False)
 
-            # aggiorna ogni 100 righe o all’ultima
             if idx % 100 == 0 or idx == total_rows - 1:
                 progress = (idx + 1) / total_rows
                 progress_bar.progress(progress, text=f"Processing row {idx + 1} of {total_rows}")
 
         result = df[pd.Series(matches)]
+        progress_placeholder.empty()
 
-        progress_placeholder.empty()  # rimuove la barra
-
-        # download
         buf = BytesIO()
         result.to_excel(buf, index=False, engine='openpyxl')
         buf.seek(0)
+
+        # sanitize filename
+        safe_filename = re.sub(r'[<>:"/\\|?*]', '_', custom_filename.strip()) or "filtered_results"
+
         st.download_button(
             "Download filtered Excel",
             data=buf,
-            file_name="filtered_results.xlsx",
+            file_name=f"{safe_filename}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
