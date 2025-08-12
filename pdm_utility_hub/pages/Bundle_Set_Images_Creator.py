@@ -515,47 +515,59 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         except Exception as e:
             st.error(f"Failed to save or read bundle list Excel file: {e}")
 
-    zip_bytes = None
-    if os.path.exists(base_folder) and any(os.scandir(base_folder)):
-        temp_parent = f"Bundle&Set_temp_{session_id}"
-        if os.path.exists(temp_parent): shutil.rmtree(temp_parent)
+  from math import ceil
+
+zip_bytes_list = []
+
+if os.path.exists(base_folder) and any(os.scandir(base_folder)):
+    # Prende tutti i file generati
+    all_files = []
+    for root, _, files in os.walk(base_folder):
+        for file in files:
+            all_files.append(os.path.join(root, file))
+
+    chunk_size = 1000
+    num_chunks = ceil(len(all_files) / chunk_size)
+
+    for i in range(num_chunks):
+        chunk_files = all_files[i*chunk_size : (i+1)*chunk_size]
+
+        temp_parent = f"Bundle&Set_temp_{session_id}_part{i+1}"
+        if os.path.exists(temp_parent):
+            shutil.rmtree(temp_parent)
         os.makedirs(temp_parent, exist_ok=True)
-        zip_content_folder = os.path.join(temp_parent, "Bundle&Set")
-        try:
-            shutil.copytree(base_folder, zip_content_folder)
-        except Exception as e:
-            st.error(f"Error copying files for zipping: {e}")
-            if os.path.exists(temp_parent): shutil.rmtree(temp_parent)
-            return None, missing_images_data, missing_images_df, bundle_list_data
-        zip_base_name = f"Bundle&Set_archive_{session_id}"
+
+        # Copia solo i file del blocco nella stessa struttura di cartelle
+        for f_path in chunk_files:
+            rel_path = os.path.relpath(f_path, base_folder)
+            dest_path = os.path.join(temp_parent, rel_path)
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            shutil.copy2(f_path, dest_path)
+
+        zip_base_name = f"Bundle&Set_part{i+1}_{session_id}"
         final_zip_path = f"{zip_base_name}.zip"
+
         try:
             shutil.make_archive(base_name=zip_base_name, format='zip', root_dir=temp_parent)
-            if os.path.exists(final_zip_path):
-                with open(final_zip_path, "rb") as zip_file:
-                    zip_bytes = zip_file.read()
-                os.remove(final_zip_path)
-            else:
-                 st.error("Failed to create ZIP archive (file not found after creation attempt).")
+            with open(final_zip_path, "rb") as zip_file:
+                zip_bytes_list.append(zip_file.read())
+            os.remove(final_zip_path)
         except Exception as e:
-            st.error(f"Error during zipping process: {e}")
-        finally:
-            if os.path.exists(temp_parent):
-                try:
-                    shutil.rmtree(temp_parent)
-                except Exception as e:
-                    st.warning(f"Could not remove temporary zip folder {temp_parent}: {e}")
-    elif os.path.exists(base_folder):
-         st.info("Processing complete, but no images were saved to create a ZIP file.")
-         try:
-             os.rmdir(base_folder)
-         except OSError:
-             try:
-                 shutil.rmtree(base_folder)
-             except Exception as e:
-                 st.warning(f"Could not remove base folder {base_folder}: {e}")
+            st.error(f"Errore nella creazione dello ZIP parte {i+1}: {e}")
 
-    return zip_bytes, missing_images_data, missing_images_df, bundle_list_data
+        shutil.rmtree(temp_parent)
+
+else:
+    st.info("Processing complete, but no images were saved to create a ZIP file.")
+    try:
+        os.rmdir(base_folder)
+    except OSError:
+        try:
+            shutil.rmtree(base_folder)
+        except Exception as e:
+            st.warning(f"Could not remove base folder {base_folder}: {e}")
+
+return zip_bytes_list, missing_images_data, missing_images_df, bundle_list_data
 
 # ---------------------- End of Function Definitions ----------------------
 
@@ -716,13 +728,14 @@ if uploaded_file is not None:
 
 if st.session_state.get("processing_complete_bundle", False):
     st.markdown("---")
-    if st.session_state.get("zip_data"):
+ if st.session_state.get("zip_data"):
+    for idx, zip_bytes in enumerate(st.session_state["zip_data"], start=1):
         st.download_button(
-            label="Download Bundle Images (ZIP)",
-            data=st.session_state["zip_data"],
-            file_name=f"BundleSet_{session_id}.zip",
+            label=f"Download Bundle Images - Part {idx}",
+            data=zip_bytes,
+            file_name=f"BundleSet_part{idx}_{session_id}.zip",
             mime="application/zip",
-            key="dl_zip_bundle_v"
+            key=f"dl_zip_bundle_v_{idx}"
         )
     else:
         if st.session_state.get("processing_complete_bundle", False):
