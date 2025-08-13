@@ -10,7 +10,7 @@ import time
 from io import BytesIO
 from PIL import Image, ImageChops
 from cryptography.fernet import Fernet
-import zipfile # Added for ZIP handling
+import zipfile
 
 # Page configuration (MUST be the first operation)
 st.set_page_config(
@@ -23,88 +23,39 @@ st.set_page_config(
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# Page content
-
 # --- Global CSS to hide default navigation and set sidebar width ---
 st.markdown(
     """
     <style>
-    /* Set sidebar width to 540px and force it */
     [data-testid="stSidebar"] > div:first-child {
         width: 540px !important;
         min-width: 540px !important;
         max-width: 540px !important;
     }
-    /* Hide the auto-generated Streamlit sidebar navigation */
-    [data-testid="stSidebarNav"] {
-        display: none;
-    }
-    /* Make the internal container transparent while keeping padding/radius */
-    div[data-testid="stAppViewContainer"] > section > div.block-container {
-         background-color: transparent !important;
-         padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0.5rem !important;
-    }
+    [data-testid="stSidebarNav"] { display: none; }
+    div[data-testid="stAppViewContainer"] > section > div.block-container,
     .main .block-container {
          background-color: transparent !important;
          padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
     }
-    /* Base style for app buttons/placeholder (from hub) - Adapted to the theme */
-    .app-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin-bottom: 1.5rem;
-    }
+    .app-container { display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5rem; }
     .app-button-link, .app-button-placeholder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 1.2rem 1.5rem;
-        border-radius: 0.5rem;
-        text-decoration: none;
-        font-weight: bold;
-        font-size: 1.05rem;
-        width: 90%;
-        min-height: 100px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-        margin-bottom: 0.75rem;
-        text-align: center;
-        line-height: 1.4;
+        display: flex; align-items: center; justify-content: center;
+        padding: 1.2rem 1.5rem; border-radius: 0.5rem; text-decoration: none;
+        font-weight: bold; font-size: 1.05rem; width: 90%; min-height: 100px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04); margin-bottom: 0.75rem; text-align: center; line-height: 1.4;
         transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
         border: 1px solid var(--border-color, #cccccc);
     }
     .app-button-link svg, .app-button-placeholder svg,
-    .app-button-link .icon, .app-button-placeholder .icon {
-         margin-right: 0.6rem;
-         flex-shrink: 0;
-    }
-    .app-button-link > div[data-testid="stText"] > span:before {
-        content: "" !important; margin-right: 0 !important;
-    }
-    .app-button-link {
-        cursor: pointer;
-    }
-    .app-button-link:hover {
-        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-    }
-    .app-button-placeholder {
-        opacity: 0.7;
-        cursor: default;
-        box-shadow: none;
-        border-style: dashed;
-    }
-    .app-button-placeholder .icon {
-         font-size: 1.5em;
-    }
-    .app-description {
-        font-size: 0.9em;
-        padding: 0 15px;
-        text-align: justify;
-        width: 90%;
-        margin: 0 auto;
-    }
+    .app-button-link .icon, .app-button-placeholder .icon { margin-right: 0.6rem; flex-shrink: 0; }
+    .app-button-link > div[data-testid="stText"] > span:before { content: "" !important; margin-right: 0 !important; }
+    .app-button-link { cursor: pointer; }
+    .app-button-link:hover { box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+    .app-button-placeholder { opacity: 0.7; cursor: default; box-shadow: none; border-style: dashed; }
+    .app-button-placeholder .icon { font-size: 1.5em; }
+    .app-description { font-size: 0.9em; padding: 0 15px; text-align: justify; width: 90%; margin: 0 auto; }
     </style>
     """,
     unsafe_allow_html=True
@@ -121,19 +72,32 @@ if "bundle_creator_session_id" not in st.session_state:
 # ---------------------- Begin Main App Code ----------------------
 session_id = st.session_state["bundle_creator_session_id"]
 base_folder = f"Bundle&Set_{session_id}"
+zip_final_path = f"Bundle&Set_{session_id}.zip"
+missing_images_excel_path = f"missing_images_{session_id}.xlsx"
+bundle_list_excel_path = f"bundle_list_{session_id}.xlsx"
 
 def clear_old_data():
+    # Rimuovi cartella output e file generati (zip e report)
     if os.path.exists(base_folder):
-        shutil.rmtree(base_folder)
-    zip_path = f"Bundle&Set_{session_id}.zip"
-    if os.path.exists(zip_path):
-        os.remove(zip_path)
-    missing_images_excel_path = f"missing_images_{session_id}.xlsx"
-    bundle_list_excel_path = f"bundle_list_{session_id}.xlsx"
+        shutil.rmtree(base_folder, ignore_errors=True)
+    if os.path.exists(zip_final_path):
+        try: os.remove(zip_final_path)
+        except Exception: pass
     if os.path.exists(missing_images_excel_path):
-        os.remove(missing_images_excel_path)
+        try: os.remove(missing_images_excel_path)
+        except Exception: pass
     if os.path.exists(bundle_list_excel_path):
-        os.remove(bundle_list_excel_path)
+        try: os.remove(bundle_list_excel_path)
+        except Exception: pass
+
+def has_enough_space(path, required_bytes=200*1024*1024):
+    """Controllo spazio libero (default: 200MB margine)."""
+    try:
+        total, used, free = shutil.disk_usage(os.path.dirname(path) or ".")
+        return free > required_bytes
+    except Exception:
+        # Se non leggiamo lo spazio, non blocchiamo l'app
+        return True
 
 # ---------------------- Helper Functions ----------------------
 async def async_download_image(product_code, extension, session):
@@ -163,32 +127,22 @@ def process_double_bundle_image(image, layout="horizontal"):
     width, height = image.size
     chosen_layout = "vertical" if (layout.lower() == "automatic" and height < width) else layout.lower()
     if chosen_layout == "horizontal":
-        merged_width = width * 2
-        merged_height = height
+        merged_width = width * 2; merged_height = height
         merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
-        merged_image.paste(image, (0, 0))
-        merged_image.paste(image, (width, 0))
+        merged_image.paste(image, (0, 0)); merged_image.paste(image, (width, 0))
     elif chosen_layout == "vertical":
-        merged_width = width
-        merged_height = height * 2
+        merged_width = width; merged_height = height * 2
         merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
-        merged_image.paste(image, (0, 0))
-        merged_image.paste(image, (0, height))
+        merged_image.paste(image, (0, 0)); merged_image.paste(image, (0, height))
     else:
-        merged_width = width * 2
-        merged_height = height
+        merged_width = width * 2; merged_height = height
         merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
-        merged_image.paste(image, (0, 0))
-        merged_image.paste(image, (width, 0))
-    if merged_width == 0 or merged_height == 0:
-        scale_factor = 1
-    else:
-        scale_factor = min(1000 / merged_width, 1000 / merged_height)
+        merged_image.paste(image, (0, 0)); merged_image.paste(image, (width, 0))
+    scale_factor = 1 if (merged_width == 0 or merged_height == 0) else min(1000/merged_width, 1000/merged_height)
     new_size = (int(merged_width * scale_factor), int(merged_height * scale_factor))
     resized_image = merged_image.resize(new_size, Image.LANCZOS)
     final_image = Image.new("RGB", (1000, 1000), (255, 255, 255))
-    x_offset = (1000 - new_size[0]) // 2
-    y_offset = (1000 - new_size[1]) // 2
+    x_offset = (1000 - new_size[0]) // 2; y_offset = (1000 - new_size[1]) // 2
     final_image.paste(resized_image, (x_offset, y_offset))
     return final_image
 
@@ -197,35 +151,22 @@ def process_triple_bundle_image(image, layout="horizontal"):
     width, height = image.size
     chosen_layout = "vertical" if (layout.lower() == "automatic" and height < width) else layout.lower()
     if chosen_layout == "horizontal":
-        merged_width = width * 3
-        merged_height = height
+        merged_width = width * 3; merged_height = height
         merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
-        merged_image.paste(image, (0, 0))
-        merged_image.paste(image, (width, 0))
-        merged_image.paste(image, (width * 2, 0))
+        merged_image.paste(image, (0, 0)); merged_image.paste(image, (width, 0)); merged_image.paste(image, (width*2, 0))
     elif chosen_layout == "vertical":
-        merged_width = width
-        merged_height = height * 3
+        merged_width = width; merged_height = height * 3
         merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
-        merged_image.paste(image, (0, 0))
-        merged_image.paste(image, (0, height))
-        merged_image.paste(image, (0, height * 2))
+        merged_image.paste(image, (0, 0)); merged_image.paste(image, (0, height)); merged_image.paste(image, (0, height*2))
     else:
-        merged_width = width * 3
-        merged_height = height
+        merged_width = width * 3; merged_height = height
         merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
-        merged_image.paste(image, (0, 0))
-        merged_image.paste(image, (width, 0))
-        merged_image.paste(image, (width * 2, 0))
-    if merged_width == 0 or merged_height == 0:
-        scale_factor = 1
-    else:
-        scale_factor = min(1000 / merged_width, 1000 / merged_height)
+        merged_image.paste(image, (0, 0)); merged_image.paste(image, (width, 0)); merged_image.paste(image, (width*2, 0))
+    scale_factor = 1 if (merged_width == 0 or merged_height == 0) else min(1000/merged_width, 1000/merged_height)
     new_size = (int(merged_width * scale_factor), int(merged_height * scale_factor))
     resized_image = merged_image.resize(new_size, Image.LANCZOS)
     final_image = Image.new("RGB", (1000, 1000), (255, 255, 255))
-    x_offset = (1000 - new_size[0]) // 2
-    y_offset = (1000 - new_size[1]) // 2
+    x_offset = (1000 - new_size[0]) // 2; y_offset = (1000 - new_size[1]) // 2
     final_image.paste(resized_image, (x_offset, y_offset))
     return final_image
 
@@ -264,12 +205,23 @@ async def async_get_image_with_fallback(product_code, session):
             return content, fallback_ext
     return None, None
 
+def zip_folder_no_copy(folder_path, zip_path, root_name="Bundle&Set"):
+    """Crea uno ZIP unico senza copiare la cartella e senza caricarlo in RAM."""
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                abs_path = os.path.join(root, file)
+                rel_path = os.path.relpath(abs_path, folder_path)
+                arcname = os.path.join(root_name, rel_path)
+                zf.write(abs_path, arcname)
+
 # ---------------------- Main Processing Function ----------------------
 async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal"):
     session_id = st.session_state["bundle_creator_session_id"]
     base_folder = f"Bundle&Set_{session_id}"
     missing_images_excel_path = f"missing_images_{session_id}.xlsx"
     bundle_list_excel_path = f"bundle_list_{session_id}.xlsx"
+    zip_final_path = f"Bundle&Set_{session_id}.zip"
 
     if "encryption_key" not in st.session_state:
         st.session_state["encryption_key"] = Fernet.generate_key()
@@ -340,7 +292,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
 
                 result, used_ext = await async_get_image_with_fallback(product_code, session)
 
-                # --- Uniform Bundle: NL FR dictionary result with duplicate creation if only one exists ---
+                # --- Uniform Bundle: NL FR dictionary with duplicate creation if only one exists ---
                 if used_ext == "NL FR" and isinstance(result, dict):
                     bundle_cross_country = True
                     folder_name = os.path.join(base_folder, "cross-country")
@@ -415,17 +367,13 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             final_img = await asyncio.to_thread(process_triple_bundle_image, img, layout)
                         else:
                             final_img = img
-                        # When fallback_ext is NL FR, create only the -nl-h1 and -fr-h1 images.
                         if st.session_state.get("fallback_ext") == "NL FR":
-                            suffix_nl = "-nl-h1"
-                            suffix_fr = "-fr-h1"
-                            save_path_nl = os.path.join(folder_name, f"{bundle_code}{suffix_nl}.jpg")
-                            save_path_fr = os.path.join(folder_name, f"{bundle_code}{suffix_fr}.jpg")
+                            save_path_nl = os.path.join(folder_name, f"{bundle_code}-nl-h1.jpg")
+                            save_path_fr = os.path.join(folder_name, f"{bundle_code}-fr-h1.jpg")
                             await asyncio.to_thread(final_img.save, save_path_nl, "JPEG", quality=100)
                             await asyncio.to_thread(final_img.save, save_path_fr, "JPEG", quality=100)
                         else:
-                            suffix = "-h1"
-                            save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
+                            save_path = os.path.join(folder_name, f"{bundle_code}-h1.jpg")
                             await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=100)
                     except Exception as e:
                         st.warning(f"Error processing image for bundle {bundle_code} (PZN: {product_code}, Ext: {used_ext}): {e}")
@@ -491,6 +439,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         except Exception as e:
             st.warning(f"Could not remove unused mixed folder: {e}")
 
+    # Reports
     missing_images_data = None
     missing_images_df = pd.DataFrame(columns=["PZN Bundle", "PZN with image missing"])
     if error_list:
@@ -503,7 +452,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
             with open(missing_images_excel_path, "rb") as f_csv:
                 missing_images_data = f_csv.read()
         except Exception as e:
-             st.error(f"Failed to save or read missing images Excel file: {e}")
+            st.error(f"Failed to save or read missing images Excel file: {e}")
 
     bundle_list_data = None
     bundle_list_df = pd.DataFrame(columns=["sku", "pzns_in_set", "bundle type", "cross-country"])
@@ -516,44 +465,41 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         except Exception as e:
             st.error(f"Failed to save or read bundle list Excel file: {e}")
 
-
-    zip_bytes = None
+    # ZIP unico senza copia e senza caricarlo in RAM
     if os.path.exists(base_folder) and any(os.scandir(base_folder)):
-        try:
-            # Create an in-memory buffer for the ZIP file
-            zip_buffer = BytesIO()
-            
-            # Create the ZIP archive directly in the buffer
-            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                # Iterate recursively over all files and folders
-                for root, _, files in os.walk(base_folder):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        # Create a relative path for files in the archive
-                        # This ensures the folder structure is correct
-                        archive_path = os.path.join("Bundle&Set", os.path.relpath(file_path, base_folder))
-                        zip_file.write(file_path, arcname=archive_path)
-            
-            # Get the ZIP file bytes from the buffer
-            zip_bytes = zip_buffer.getvalue()
+        # Controllo spazio disco minimo prima di zippare
+        if not has_enough_space(zip_final_path):
+            st.error("Insufficient disk space to create the ZIP on the server. Try reducing the batch size.")
+            return None, missing_images_data, missing_images_df, bundle_list_data
 
+        try:
+            # Rimuovi eventuale zip preesistente
+            if os.path.exists(zip_final_path):
+                try: os.remove(zip_final_path)
+                except Exception: pass
+            zip_folder_no_copy(base_folder, zip_final_path, root_name="Bundle&Set")
+        except OSError as e:
+            if "No space left" in str(e):
+                st.error("No space left on device during zipping. Reduce the batch size.")
+            else:
+                st.error(f"OS error during zipping: {e}")
+            return None, missing_images_data, missing_images_df, bundle_list_data
         except Exception as e:
-            st.error(f"Error creating in-memory ZIP file: {e}")
-        finally:
-            # Remove the base folder after creating the ZIP
+            st.error(f"Error during zipping process: {e}")
+            return None, missing_images_data, missing_images_df, bundle_list_data
+    elif os.path.exists(base_folder):
+        st.info("Processing complete, but no images were saved to create a ZIP file.")
+        try:
+            os.rmdir(base_folder)
+        except OSError:
             try:
                 shutil.rmtree(base_folder)
             except Exception as e:
-                st.warning(f"Could not remove temporary folder {base_folder}: {e}")
+                st.warning(f"Could not remove base folder {base_folder}: {e}")
+        return None, missing_images_data, missing_images_df, bundle_list_data
 
-    elif os.path.exists(base_folder):
-         st.info("Processing complete, but no images were saved to create a ZIP file.")
-         try:
-             shutil.rmtree(base_folder)
-         except Exception as e:
-             st.warning(f"Could not remove base folder {base_folder}: {e}")
-
-    return zip_bytes, missing_images_data, missing_images_df, bundle_list_data
+    # Torniamo SOLO il path allo zip (no bytes in RAM)
+    return zip_final_path if os.path.exists(zip_final_path) else None, missing_images_data, missing_images_df, bundle_list_data
 
 # ---------------------- End of Function Definitions ----------------------
 
@@ -577,7 +523,7 @@ st.markdown(
 if st.button("🧹 Clear Cache and Reset Data"):
     keys_to_remove = [
         "bundle_creator_session_id", "encryption_key", "fallback_ext",
-        "zip_data", "bundle_list_data", "missing_images_data",
+        "zip_path", "bundle_list_data", "missing_images_data",
         "missing_images_df", "processing_complete_bundle",
         "file_uploader", "preview_pzn_bundle", "sidebar_ext_bundle"
     ]
@@ -594,7 +540,7 @@ if st.button("🧹 Clear Cache and Reset Data"):
         st.warning(f"Error during clear_old_data: {e}")
     st.success("Cache and session data cleared. Ready for a new task.")
     if "bundle_creator_session_id" not in st.session_state:
-         st.session_state["bundle_creator_session_id"] = str(uuid.uuid4())
+        st.session_state["bundle_creator_session_id"] = str(uuid.uuid4())
     time.sleep(1)
     st.rerun()
 
@@ -636,7 +582,7 @@ if show_image and product_code_preview:
                 import requests
                 response = requests.get(preview_url, stream=True, timeout=10)
                 if response.status_code == 200:
-                     image_data = response.content
+                    image_data = response.content
                 else:
                     fetch_status_code = response.status_code
             except requests.exceptions.RequestException as e:
@@ -658,11 +604,11 @@ if show_image and product_code_preview:
                 key="dl_preview_bundle"
             )
         except Exception as e:
-             st.sidebar.error(f"Could not display preview image: {e}")
+            st.sidebar.error(f"Could not display preview image: {e}")
     elif 'fetch_status_code' in locals() and fetch_status_code == 404:
-         st.sidebar.warning(f"No image found (404) for {product_code_preview} with -p{selected_extension}.jpg")
+        st.sidebar.warning(f"No image found (404) for {product_code_preview} with -p{selected_extension}.jpg")
     elif 'fetch_status_code' in locals() and fetch_status_code is not None:
-         st.sidebar.error(f"Failed to fetch image (Status: {fetch_status_code}) for {product_code_preview} with -p{selected_extension}.jpg")
+        st.sidebar.error(f"Failed to fetch image (Status: {fetch_status_code}) for {product_code_preview} with -p{selected_extension}.jpg")
 
 uploaded_file = st.file_uploader("**Upload CSV File**", type=["csv", "xlsx"], key="file_uploader")
 if uploaded_file is not None:
@@ -681,16 +627,17 @@ if uploaded_file is not None:
     if st.button("Process CSV", key="process_csv_bundle"):
         start_time = time.time()
         progress_bar = st.progress(0, text="Starting processing...")
-        st.session_state["zip_data"] = None
+        # reset output in stato (leggeri: path e piccoli report)
+        st.session_state["zip_path"] = None
         st.session_state["bundle_list_data"] = None
         st.session_state["missing_images_data"] = None
         st.session_state["missing_images_df"] = None
         st.session_state["processing_complete_bundle"] = False
         try:
             if 'process_file_async' not in globals():
-                 st.error("Critical error: Processing function is not defined.")
-                 st.stop()
-            zip_data, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
+                st.error("Critical error: Processing function is not defined.")
+                st.stop()
+            zip_path, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
                 process_file_async(uploaded_file, progress_bar, layout=layout_choice)
             )
             progress_bar.progress(1.0, text="Processing Complete!")
@@ -698,7 +645,7 @@ if uploaded_file is not None:
             minutes = int(elapsed_time // 60)
             seconds = int(elapsed_time % 60)
             st.success(f"Processing finished in {minutes}m {seconds}s.")
-            st.session_state["zip_data"] = zip_data
+            st.session_state["zip_path"] = zip_path
             st.session_state["bundle_list_data"] = bundle_list_data
             st.session_state["missing_images_data"] = missing_images_data
             st.session_state["missing_images_df"] = missing_images_df
@@ -706,25 +653,30 @@ if uploaded_file is not None:
             time.sleep(1.5)
             progress_bar.empty()
         except Exception as e:
-             progress_bar.empty()
-             st.error(f"An error occurred during processing: {e}")
-             import traceback
-             st.error(f"Traceback: {traceback.format_exc()}")
-             st.session_state["processing_complete_bundle"] = False
+            progress_bar.empty()
+            st.error(f"An error occurred during processing: {e}")
+            import traceback
+            st.error(f"Traceback: {traceback.format_exc()}")
+            st.session_state["processing_complete_bundle"] = False
 
 if st.session_state.get("processing_complete_bundle", False):
     st.markdown("---")
-    if st.session_state.get("zip_data"):
-        st.download_button(
-            label="Download Bundle Images (ZIP)",
-            data=st.session_state["zip_data"],
-            file_name=f"BundleSet_{session_id}.zip",
-            mime="application/zip",
-            key="dl_zip_bundle_v"
-        )
+    # ZIP: usa file handle (no bytes in memoria)
+    zip_path = st.session_state.get("zip_path")
+    if zip_path and os.path.exists(zip_path):
+        with open(zip_path, "rb") as f:
+            st.download_button(
+                label="Download Bundle Images (ZIP)",
+                data=f,  # file handle
+                file_name=os.path.basename(zip_path),
+                mime="application/zip",
+                key="dl_zip_bundle_v"
+            )
     else:
         if st.session_state.get("processing_complete_bundle", False):
-             st.info("Processing complete, but no ZIP file was generated (likely no images saved).")
+            st.info("Processing complete, but no ZIP file was generated (likely no images saved).")
+
+    # Bundle list report (piccolo: ok in bytes)
     if st.session_state.get("bundle_list_data"):
         st.download_button(
             label="Download Bundle List",
@@ -736,6 +688,8 @@ if st.session_state.get("processing_complete_bundle", False):
     else:
         if st.session_state.get("processing_complete_bundle", False):
             st.info("Processing complete, but no bundle list report was generated.")
+
+    # Missing list + preview
     missing_df = st.session_state.get("missing_images_df")
     if missing_df is not None:
         if not missing_df.empty:
@@ -751,4 +705,4 @@ if st.session_state.get("processing_complete_bundle", False):
                     key="dl_missing_bundle_v"
                 )
         else:
-             st.success("No missing images reported.")
+            st.success("No missing images reported.")
