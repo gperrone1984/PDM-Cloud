@@ -15,8 +15,8 @@ import zipfile
 # =====================
 # Global configuration
 # =====================
-JPEG_QUALITY = 85             # reduce size vs quality=100
-ZIP_MAX_FILES = 600           # max files per ZIP part
+JPEG_QUALITY = 100             # reduce size vs quality=100
+ZIP_MAX_FILES = 1000           # max files per ZIP part
 ZIP_COMPRESSLEVEL = 9         # strongest compression
 
 # Page configuration (MUST be the first operation)
@@ -134,13 +134,15 @@ def clear_old_data():
     if os.path.exists(base_folder):
         shutil.rmtree(base_folder)
 
-    # remove legacy single zip (if any)
-    single_zip = f"Bundle&Set_{session_id}.zip"
-    if os.path.exists(single_zip):
-        try:
-            os.remove(single_zip)
-        except Exception:
-            pass
+    # remove single zips (legacy & current)
+    legacy_zip_amp = f"Bundle&Set_{session_id}.zip"
+    single_zip = f"BundleSet_{session_id}.zip"
+    for zp in (legacy_zip_amp, single_zip):
+        if os.path.exists(zp):
+            try:
+                os.remove(zp)
+            except Exception:
+                pass
 
     # remove multi-part zips
     for fname in os.listdir("."):
@@ -330,8 +332,20 @@ def zip_folder_in_parts(folder: str, session_id: str, max_files_per_zip: int = Z
 
     return zip_paths
 
+
+def zip_folder_single(folder: str, session_id: str) -> str:
+    """Create a single ZIP archive from `folder` and return its path."""
+    zip_path = f"BundleSet_{session_id}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=ZIP_COMPRESSLEVEL) as zf:
+        for root, _, files in os.walk(folder):
+            for name in files:
+                full_path = os.path.join(root, name)
+                arcname = os.path.join("Bundle&Set", os.path.relpath(full_path, folder))
+                zf.write(full_path, arcname=arcname)
+    return zip_path
+
 # ---------------------- Main Processing Function ----------------------
-async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal"):
+async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal", split_every_1000=False):
     session_id = st.session_state["bundle_creator_session_id"]
     base_folder = f"Bundle&Set_{session_id}"
     missing_images_excel_path = f"missing_images_{session_id}.xlsx"
@@ -598,11 +612,17 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         except Exception as e:
             st.error(f"Failed to save or read bundle list Excel file: {e}")
 
-    # ---- ZIP creation in parts on disk ----
+    # ---- ZIP creation (single or multi-part) on disk ----
     zip_paths = []
     if os.path.exists(base_folder) and any(os.scandir(base_folder)):
         try:
-            zip_paths = zip_folder_in_parts(base_folder, session_id, ZIP_MAX_FILES)
+            if split_every_1000:
+                # split into parts of 1000 files each
+                zip_paths = zip_folder_in_parts(base_folder, session_id, 1000)
+            else:
+                # single zip
+                zp = zip_folder_single(base_folder, session_id)
+                zip_paths = [zp]
         except Exception as e:
             st.error(f"Error during zipping process: {e}")
     else:
@@ -630,7 +650,7 @@ st.markdown(
        - File Type: **CSV** or **Excel** - All Attributes or Grid Context (for Grid Context, select ID and PZN included in the set) - **With Codes** - **Without Media**
     3. **Choose the language for language specific photos:** (if needed)
     4. **Choose bundle layout:** (Horizontal, Vertical, or Automatic)
-    5. Click **Process CSV** to start the process.
+    5. Click **Process file** to start the process.
     6. Download the files.
     7. **Before starting a new process, click on Clear Cache and Reset Data.**
     """
@@ -740,14 +760,18 @@ if uploaded_file is not None:
     else:
         if "fallback_ext" in st.session_state:
             del st.session_state["fallback_ext"]
-    if st.button("Process CSV", key="process_csv_bundle"):
-        start_time = time.time()
-        progress_bar = st.progress(0, text="Starting processing...")
-        st.session_state["zip_paths"] = None
-        st.session_state["bundle_list_data"] = None
-        st.session_state["missing_images_data"] = None
-        st.session_state["missing_images_df"] = None
-        st.session_state["processing_complete_bundle"] = False
+    col_btn, col_chk = st.columns([1, 3])
+    with col_chk:
+        split_zip_1000 = st.checkbox("Create a ZIP file every 1000 products (recommended for large jobs)", value=False, key="split_zip_1000")
+    with col_btn:
+        if st.button("Process file", key="process_csv_bundle"):
+            start_time = time.time()
+            progress_bar = st.progress(0, text="Starting processing...")
+            st.session_state["zip_paths"] = None
+            st.session_state["bundle_list_data"] = None
+            st.session_state["missing_images_data"] = None
+            st.session_state["missing_images_df"] = None
+            st.session_state["processing_complete_bundle"] = False
         try:
             if 'process_file_async' not in globals():
                  st.error("Critical error: Processing function is not defined.")
