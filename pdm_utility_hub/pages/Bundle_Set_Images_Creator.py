@@ -772,31 +772,31 @@ if uploaded_file is not None:
             st.session_state["missing_images_data"] = None
             st.session_state["missing_images_df"] = None
             st.session_state["processing_complete_bundle"] = False
-        try:
-            if 'process_file_async' not in globals():
-                 st.error("Critical error: Processing function is not defined.")
-                 st.stop()
-            zip_paths, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
-                process_file_async(uploaded_file, progress_bar, layout=layout_choice)
-            )
-            progress_bar.progress(1.0, text="Processing Complete!")
-            elapsed_time = time.time() - start_time
-            minutes = int(elapsed_time // 60)
-            seconds = int(elapsed_time % 60)
-            st.success(f"Processing finished in {minutes}m {seconds}s.")
-            st.session_state["zip_paths"] = zip_paths
-            st.session_state["bundle_list_data"] = bundle_list_data
-            st.session_state["missing_images_data"] = missing_images_data
-            st.session_state["missing_images_df"] = missing_images_df
-            st.session_state["processing_complete_bundle"] = True
-            time.sleep(1.5)
-            progress_bar.empty()
-        except Exception as e:
-             progress_bar.empty()
-             st.error(f"An error occurred during processing: {e}")
-             import traceback
-             st.error(f"Traceback: {traceback.format_exc()}")
-             st.session_state["processing_complete_bundle"] = False
+            try:
+                if 'process_file_async' not in globals():
+                    st.error("Critical error: Processing function is not defined.")
+                    st.stop()
+                zip_paths, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
+                    process_file_async(uploaded_file, progress_bar, layout=layout_choice, split_every_1000=split_zip_1000)
+                )
+                progress_bar.progress(1.0, text="Processing Complete!")
+                elapsed_time = time.time() - start_time
+                minutes = int(elapsed_time // 60)
+                seconds = int(elapsed_time % 60)
+                st.success(f"Processing finished in {minutes}m {seconds}s.")
+                st.session_state["zip_paths"] = zip_paths
+                st.session_state["bundle_list_data"] = bundle_list_data
+                st.session_state["missing_images_data"] = missing_images_data
+                st.session_state["missing_images_df"] = missing_images_df
+                st.session_state["processing_complete_bundle"] = True
+                time.sleep(1.5)
+                progress_bar.empty()
+            except Exception as e:
+                progress_bar.empty()
+                st.error(f"An error occurred during processing: {e}")
+                import traceback
+                st.error(f"Traceback: {traceback.format_exc()}")
+                st.session_state["processing_complete_bundle"] = False
 
 if st.session_state.get("processing_complete_bundle", False):
     st.markdown("---")
