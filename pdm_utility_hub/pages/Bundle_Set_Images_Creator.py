@@ -22,6 +22,9 @@ st.set_page_config(
     layout="centered"
 )
 
+# Enable static file serving for direct links (important for chunk links)
+st.set_option("server.enableStaticServing", True)
+
 # =========================
 # Authentication check
 # =========================
@@ -51,7 +54,6 @@ st.markdown(
          border-radius: 0.5rem !important;
     }
 
-    /* App buttons (unused here but kept for style consistency) */
     .app-container { display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5rem; }
     .app-button-link, .app-button-placeholder {
         display: flex; align-items: center; justify-content: center;
@@ -61,13 +63,8 @@ st.markdown(
         transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
         border: 1px solid var(--border-color, #cccccc);
     }
-    .app-button-link svg, .app-button-placeholder svg,
-    .app-button-link .icon, .app-button-placeholder .icon { margin-right: 0.6rem; flex-shrink: 0; }
-    .app-button-link > div[data-testid="stText"] > span:before { content: "" !important; margin-right: 0 !important; }
-    .app-button-link { cursor: pointer; }
     .app-button-link:hover { box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
     .app-button-placeholder { opacity: 0.7; cursor: default; box-shadow: none; border-style: dashed; }
-    .app-button-placeholder .icon { font-size: 1.5em; }
     .app-description { font-size: 0.9em; padding: 0 15px; text-align: justify; width: 90%; margin: 0 auto; }
     </style>
     """,
@@ -95,8 +92,7 @@ bundle_list_excel_path = f"bundle_list_{session_id}.xlsx"
 # =========================
 # Config: chunk mode & static serving
 # =========================
-CHUNK_SIZE = 1000              # ~1000 bundles per chunk
-STATIC_THRESHOLD_MB = 80       # if ZIP >= 80MB, serve via /static link
+CHUNK_SIZE = 1000            # ~1000 bundles per chunk
 STATIC_DIR = pathlib.Path("static")
 STATIC_DIR.mkdir(exist_ok=True)
 
@@ -107,9 +103,8 @@ def clear_old_data():
     """
     Remove previous output folders and files for the current session.
     """
-    # Remove base output folder(s)
+    # Remove per-part folders and base folder
     for p in os.listdir("."):
-        # Remove any per-part folders for this session
         if p.startswith(f"Bundle&Set_{session_id}_part") and os.path.isdir(p):
             shutil.rmtree(p, ignore_errors=True)
     if os.path.exists(base_folder):
@@ -126,7 +121,7 @@ def clear_old_data():
             try: os.remove(p)
             except Exception: pass
 
-    # Try to remove static copies for this session
+    # Remove static ZIPs for this session
     for p in STATIC_DIR.glob(f"Bundle&Set_{session_id}*.zip"):
         try: p.unlink()
         except Exception: pass
@@ -137,12 +132,12 @@ def has_enough_space(path=".", required_bytes=200*1024*1024):
         total, used, free = shutil.disk_usage(os.path.dirname(path) or ".")
         return free > required_bytes
     except Exception:
-        # If we cannot read disk usage, do not block
         return True
 
 def move_to_static(file_path: str) -> str:
     """
-    Move or copy a ZIP into ./static and return its public URL (/static/filename).
+    Move or copy a ZIP into ./static and return its public URL (relative: static/filename).
+    Using a relative path avoids base-path issues on hosted environments.
     """
     src = pathlib.Path(file_path)
     dst = STATIC_DIR / src.name
@@ -151,9 +146,9 @@ def move_to_static(file_path: str) -> str:
             dst.unlink()
         shutil.move(str(src), str(dst))
     except Exception:
-        # If move fails (e.g., cross-device), try copy
         shutil.copy2(str(src), str(dst))
-    return f"/static/{dst.name}"
+    # return relative link (no leading slash)
+    return f"static/{dst.name}"
 
 async def async_download_image(product_code, extension, session):
     if product_code.startswith(('1', '0')):
@@ -278,7 +273,7 @@ def zip_folder_no_copy(folder_path, zip_path, root_name="Bundle&Set"):
 async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal"):
     """
     Process the entire file and produce a single ZIP.
-    Returns: zip_ref (local path or /static URL), missing_images_bytes, missing_df, bundle_list_bytes
+    Returns: zip_ref (local path or static/ URL), missing_images_bytes, missing_df, bundle_list_bytes
     """
     session_id = st.session_state["bundle_creator_session_id"]
     base_folder = f"Bundle&Set_{session_id}"
@@ -526,7 +521,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         except Exception as e:
             st.error(f"Failed to save or read bundle list Excel file: {e}")
 
-    # Create single ZIP (no copy, no RAM)
+    # Create single ZIP (no copy, no RAM) -> link if large
     zip_ref = None
     if os.path.exists(base_folder) and any(os.scandir(base_folder)):
         if not has_enough_space("."):
@@ -537,10 +532,12 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
             if os.path.exists(zip_final_path):
                 try: os.remove(zip_final_path)
                 except Exception: pass
-            zip_folder_no_copy(base_folder, zip_final_path, root_dir := "Bundle&Set")
-            # If large, serve via /static
+            # FIX: correct parameter name (root_name)
+            zip_folder_no_copy(base_folder, zip_final_path, root_name="Bundle&Set")
+
             size_mb = os.path.getsize(zip_final_path) / 1024 / 1024
-            if size_mb >= STATIC_THRESHOLD_MB:
+            # If big, serve as static link; else return path
+            if size_mb >= 80:
                 zip_ref = move_to_static(zip_final_path)
             else:
                 zip_ref = zip_final_path
@@ -567,7 +564,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
     return zip_ref, missing_images_data, missing_images_df, bundle_list_data
 
 # =========================
-# Chunk processing (recommended for large jobs)
+# Chunk processing (all chunks via static links)
 # =========================
 async def process_chunks_async(uploaded_file, progress_bar=None, layout="horizontal", chunk_size=CHUNK_SIZE):
     """
@@ -576,10 +573,10 @@ async def process_chunks_async(uploaded_file, progress_bar=None, layout="horizon
       - create dedicated output folders (suffix _part{n})
       - download/process images
       - create a ZIP for that chunk
-      - if ZIP >= STATIC_THRESHOLD_MB => move to /static and show direct link
+      - ALWAYS move to /static and show a direct link (no download_button)
       - remove the chunk folder to free space
     Returns:
-      - zip_refs: list of ZIP references (local path or /static URL)
+      - zip_refs: list of static links (static/filename.zip)
       - missing_images_bytes (global report)
       - missing_df (for on-screen table)
       - bundle_list_bytes (global report)
@@ -617,7 +614,7 @@ async def process_chunks_async(uploaded_file, progress_bar=None, layout="horizon
     all_missing = []
     all_bundle_rows = []
 
-    zip_refs = []  # per-chunk ZIPs (paths or /static URLs)
+    zip_refs = []  # static links per chunk
 
     connector = aiohttp.TCPConnector(limit=100)
     async with aiohttp.ClientSession(connector=connector) as session:
@@ -764,7 +761,7 @@ async def process_chunks_async(uploaded_file, progress_bar=None, layout="horizon
             all_missing.extend(error_list)
             all_bundle_rows.extend(bundle_list_rows)
 
-            # Create ZIP for this chunk
+            # Create ZIP for this chunk -> ALWAYS serve via static link
             if os.path.exists(base_folder_part) and any(os.scandir(base_folder_part)):
                 if not has_enough_space("."):
                     st.error("Insufficient disk space while creating a ZIP chunk.")
@@ -780,22 +777,13 @@ async def process_chunks_async(uploaded_file, progress_bar=None, layout="horizon
                     shutil.rmtree(base_folder_part, ignore_errors=True)
                     continue
 
-                # If large, serve via /static
-                size_mb = os.path.getsize(zip_path_part)/1024/1024
-                if size_mb >= STATIC_THRESHOLD_MB:
-                    url = move_to_static(zip_path_part)
-                    zip_refs.append(url)
-                    st.markdown(f"✅ Part {part_idx+1}/{num_parts} ready: [Download ZIP]({url})")
-                else:
-                    zip_refs.append(zip_path_part)
-                    with open(zip_path_part, "rb") as fh:
-                        st.download_button(
-                            f"Download ZIP part {part_idx+1}/{num_parts}",
-                            data=fh,
-                            file_name=os.path.basename(zip_path_part),
-                            mime="application/zip",
-                            key=f"dl_zip_part_{part_idx+1}"
-                        )
+                url = move_to_static(zip_path_part)
+                zip_refs.append(url)
+                # Render a plain link with download attribute (no button, no RAM)
+                st.markdown(
+                    f'<a href="{url}" download target="_blank" rel="noopener">✅ Part {part_idx+1}/{num_parts}: Download ZIP</a>',
+                    unsafe_allow_html=True
+                )
 
                 # Cleanup chunk folder immediately
                 shutil.rmtree(base_folder_part, ignore_errors=True)
@@ -978,7 +966,7 @@ if uploaded_file is not None:
                 zip_refs, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
                     process_chunks_async(uploaded_file, progress_bar, layout=layout_choice, chunk_size=CHUNK_SIZE)
                 )
-                st.session_state["zip_refs"] = zip_refs  # list of refs (paths or /static URLs)
+                st.session_state["zip_refs"] = zip_refs  # list of static links
             else:
                 zip_path, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
                     process_file_async(uploaded_file, progress_bar, layout=layout_choice)
@@ -1008,30 +996,21 @@ if uploaded_file is not None:
 if st.session_state.get("processing_complete_bundle", False):
     st.markdown("---")
 
-    # Chunk mode: show all chunk links/buttons (folder already cleaned per chunk)
+    # Chunk mode: show all chunk links (served from static/)
     if "zip_refs" in st.session_state and st.session_state["zip_refs"]:
         st.subheader("Chunk downloads")
-        for idx, ref in enumerate(st.session_state["zip_refs"], start=1):
-            if isinstance(ref, str) and ref.startswith("/static/"):
-                st.markdown(f"✅ Part {idx}: [Download ZIP]({ref})")
-            else:
-                if os.path.exists(ref):
-                    with open(ref, "rb") as fh:
-                        st.download_button(
-                            f"Download ZIP part {idx}",
-                            data=fh,
-                            file_name=os.path.basename(ref),
-                            mime="application/zip",
-                            key=f"dl_zip_chunk_{idx}"
-                        )
-                else:
-                    st.error(f"ZIP path for part {idx} not found.")
+        for idx, url in enumerate(st.session_state["zip_refs"], start=1):
+            # Always links, no download_button
+            st.markdown(
+                f'<a href="{url}" download target="_blank" rel="noopener">✅ Part {idx}: Download ZIP</a>',
+                unsafe_allow_html=True
+            )
 
-    # Single ZIP mode
+    # Single ZIP mode (kept as before; small files via button, large via static link)
     elif st.session_state.get("zip_path"):
         zip_ref = st.session_state["zip_path"]
-        if isinstance(zip_ref, str) and zip_ref.startswith("/static/"):
-            st.markdown(f"⬇️ [Download Bundle Images (ZIP)]({zip_ref})")
+        if isinstance(zip_ref, str) and zip_ref.startswith("static/"):
+            st.markdown(f'<a href="{zip_ref}" download target="_blank" rel="noopener">⬇️ Download Bundle Images (ZIP)</a>', unsafe_allow_html=True)
         elif os.path.exists(zip_ref):
             with open(zip_ref, "rb") as f:
                 st.download_button(
@@ -1081,15 +1060,13 @@ if st.session_state.get("processing_complete_bundle", False):
         for p in os.listdir("."):
             if p.startswith(f"Bundle&Set_{session_id}") and p.endswith(".zip"):
                 try:
-                    os.remove(p)
-                    deleted += 1
+                    os.remove(p); deleted += 1
                 except Exception:
                     pass
         # static ZIPs
         for p in STATIC_DIR.glob(f"Bundle&Set_{session_id}*.zip"):
             try:
-                p.unlink()
-                deleted += 1
+                p.unlink(); deleted += 1
             except Exception:
                 pass
         st.success(f"Deleted {deleted} ZIP file(s).")
