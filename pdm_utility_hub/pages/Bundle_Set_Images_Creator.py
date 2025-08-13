@@ -15,9 +15,11 @@ import zipfile
 # =====================
 # Global configuration
 # =====================
-JPEG_QUALITY = 100             # reduce size vs quality=100
+JPEG_QUALITY = 100             # image quality (user prefers max)
 ZIP_MAX_FILES = 1000           # max files per ZIP part
-ZIP_COMPRESSLEVEL = 9         # strongest compression
+ZIP_COMPRESSLEVEL = 9          # strongest compression
+AUTO_SPLIT_THRESHOLD_FILES = 1000  # auto-split if more than this many files
+MAX_SINGLE_ZIP_BYTES = 600 * 1024 * 1024  # ~600 MB cap for single ZIP
 
 # Page configuration (MUST be the first operation)
 st.set_page_config(
@@ -616,9 +618,24 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
     zip_paths = []
     if os.path.exists(base_folder) and any(os.scandir(base_folder)):
         try:
-            if split_every_1000:
+            # decide automatically to split if too many files or too big
+            file_count = 0
+            total_bytes = 0
+            for root, _, files in os.walk(base_folder):
+                file_count += len(files)
+                for name in files:
+                    try:
+                        total_bytes += os.path.getsize(os.path.join(root, name))
+                    except OSError:
+                        pass
+
+            do_split = split_every_1000 or file_count > AUTO_SPLIT_THRESHOLD_FILES or total_bytes > MAX_SINGLE_ZIP_BYTES
+
+            if do_split:
+                if not split_every_1000:
+                    st.warning(f"Large output detected ({file_count} files, ~{total_bytes/1024/1024:.1f} MB). For stability, the app automatically split the archive into parts of 1000 files.")
                 # split into parts of 1000 files each
-                zip_paths = zip_folder_in_parts(base_folder, session_id, 1000)
+                zip_paths = zip_folder_in_parts(base_folder, session_id, ZIP_MAX_FILES)
             else:
                 # single zip
                 zp = zip_folder_single(base_folder, session_id)
