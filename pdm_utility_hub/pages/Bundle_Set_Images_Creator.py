@@ -291,8 +291,9 @@ async def async_get_image_with_fallback(product_code, session):
             return content, fallback_ext
     return None, None
 
-# ---------------------- ZIP in parts ----------------------
-def zip_folder_in_parts(folder: str, session_id: str, max_files_per_zip: int = ZIP_MAX_FILES) -> list[str]:
+# ---------------------- ZIP utils ----------------------
+def zip_folder_in_parts(folder: str, session_id: str,
+                        max_files_per_zip: int = ZIP_MAX_FILES) -> list[str]:
     """Create multiple ZIP archives from `folder` to avoid a single huge file.
     Returns list of created .zip file paths.
     """
@@ -334,11 +335,12 @@ def zip_folder_in_parts(folder: str, session_id: str, max_files_per_zip: int = Z
 
     return zip_paths
 
-
 def zip_folder_single(folder: str, session_id: str) -> str:
     """Create a single ZIP archive from `folder` and return its path."""
     zip_path = f"BundleSet_{session_id}.zip"
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=ZIP_COMPRESSLEVEL) as zf:
+    with zipfile.ZipFile(zip_path, "w",
+                         compression=zipfile.ZIP_DEFLATED,
+                         compresslevel=ZIP_COMPRESSLEVEL) as zf:
         for root, _, files in os.walk(folder):
             for name in files:
                 full_path = os.path.join(root, name)
@@ -555,10 +557,10 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             processed_keys.append(lang)
                         if "1-fr" not in processed_keys and "1-nl" in processed_keys:
                              file_path_dup = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
-                             await asyncio.to_thread(save_binary_file, file_path_dup, result["1-nl"]) 
+                             await asyncio.to_thread(save_binary_file, file_path_dup, result["1-nl"])
                         elif "1-nl" not in processed_keys and "1-fr" in processed_keys:
                              file_path_dup = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
-                             await asyncio.to_thread(save_binary_file, file_path_dup, result["1-fr"]) 
+                             await asyncio.to_thread(save_binary_file, file_path_dup, result["1-fr"])
                     elif result:
                         prod_folder = bundle_folder
                         if used_ext in ["1-fr", "1-de", "1-nl"]:
@@ -706,7 +708,7 @@ st.sidebar.markdown(
     - ✏️ **Dynamic Processing:** Combine images (double/triple) with proper resizing;
     - ✏️ **Rename images** using the specific bundle&set code (e.g. -h1, -p1-fr, -p1-nl, etc);
     - ❌ **Error Logging:** Missing images are logged in a CSV ;
-    - 📥 **Download:** Get a ZIP with all processed images and reports;
+    - 📥 **Download:** Get ZIP(s) with all processed images and reports;
     - 🌐 **Interactive Preview:** Preview and download individual product images from the sidebar.
     """, unsafe_allow_html=True
 )
@@ -777,6 +779,7 @@ if uploaded_file is not None:
     else:
         if "fallback_ext" in st.session_state:
             del st.session_state["fallback_ext"]
+
     col_btn, col_chk = st.columns([1, 3])
     with col_chk:
         split_zip_1000 = st.checkbox("Create a ZIP file every 1000 products (recommended for large jobs)", value=False, key="split_zip_1000")
@@ -817,24 +820,26 @@ if uploaded_file is not None:
 
 if st.session_state.get("processing_complete_bundle", False):
     st.markdown("---")
-    # Multi-part ZIP downloads
+    # Multi-part or single ZIP downloads (from disk, not from memory)
     if st.session_state.get("zip_paths"):
         st.subheader("Download bundle images")
         for idx, zp in enumerate(st.session_state["zip_paths"], start=1):
             try:
+                size_mb = os.path.getsize(zp) / 1024 / 1024 if os.path.exists(zp) else 0
                 with open(zp, "rb") as fh:
                     st.download_button(
-                        label=f"Download ZIP (part {idx})",
-                        data=fh,
+                        label=f"Download ZIP ({'part ' + str(idx) if len(st.session_state['zip_paths']) > 1 else 'single'}) – {size_mb:.1f} MB",
+                        data=fh,  # file-like handle; Streamlit will read it
                         file_name=os.path.basename(zp),
                         mime="application/zip",
                         key=f"dl_zip_bundle_part_{idx}"
                     )
+                if size_mb > 600:
+                    st.warning(f"{os.path.basename(zp)} is very large (>600 MB). If your browser struggles to download, enable split into 1000-file parts.")
             except Exception as e:
                 st.error(f"Cannot open {zp}: {e}")
     else:
-        if st.session_state.get("processing_complete_bundle", False):
-             st.info("Processing complete, but no ZIP files were generated.")
+        st.info("Processing complete, but no ZIP files were generated.")
 
     if st.session_state.get("bundle_list_data"):
         st.download_button(
@@ -845,8 +850,7 @@ if st.session_state.get("processing_complete_bundle", False):
             key="dl_list_bundle_v"
         )
     else:
-        if st.session_state.get("processing_complete_bundle", False):
-            st.info("Processing complete, but no bundle list report was generated.")
+        st.info("Processing complete, but no bundle list report was generated.")
 
     missing_df = st.session_state.get("missing_images_df")
     if missing_df is not None:
