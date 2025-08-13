@@ -22,9 +22,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# Enable static file serving for direct links (important for chunk links)
-st.set_option("server.enableStaticServing", True)
-
 # =========================
 # Authentication check
 # =========================
@@ -136,8 +133,8 @@ def has_enough_space(path=".", required_bytes=200*1024*1024):
 
 def move_to_static(file_path: str) -> str:
     """
-    Move or copy a ZIP into ./static and return its public URL (relative: static/filename).
-    Using a relative path avoids base-path issues on hosted environments.
+    Move/copy a ZIP into ./static and return the public URL path `app/static/<filename>`.
+    This requires [server] enableStaticServing = true in .streamlit/config.toml (or ENV).
     """
     src = pathlib.Path(file_path)
     dst = STATIC_DIR / src.name
@@ -147,8 +144,8 @@ def move_to_static(file_path: str) -> str:
         shutil.move(str(src), str(dst))
     except Exception:
         shutil.copy2(str(src), str(dst))
-    # return relative link (no leading slash)
-    return f"static/{dst.name}"
+    # IMPORTANT: on Streamlit Cloud, static files are accessible via app/static/<filename>
+    return f"app/static/{dst.name}"
 
 async def async_download_image(product_code, extension, session):
     if product_code.startswith(('1', '0')):
@@ -273,7 +270,7 @@ def zip_folder_no_copy(folder_path, zip_path, root_name="Bundle&Set"):
 async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal"):
     """
     Process the entire file and produce a single ZIP.
-    Returns: zip_ref (local path or static/ URL), missing_images_bytes, missing_df, bundle_list_bytes
+    Returns: zip_ref (local path or app/static/ URL), missing_images_bytes, missing_df, bundle_list_bytes
     """
     session_id = st.session_state["bundle_creator_session_id"]
     base_folder = f"Bundle&Set_{session_id}"
@@ -532,13 +529,10 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
             if os.path.exists(zip_final_path):
                 try: os.remove(zip_final_path)
                 except Exception: pass
-            # FIX: correct parameter name (root_name)
             zip_folder_no_copy(base_folder, zip_final_path, root_name="Bundle&Set")
-
             size_mb = os.path.getsize(zip_final_path) / 1024 / 1024
-            # If big, serve as static link; else return path
             if size_mb >= 80:
-                zip_ref = move_to_static(zip_final_path)
+                zip_ref = move_to_static(zip_final_path)  # app/static/...
             else:
                 zip_ref = zip_final_path
         except OSError as e:
@@ -573,10 +567,10 @@ async def process_chunks_async(uploaded_file, progress_bar=None, layout="horizon
       - create dedicated output folders (suffix _part{n})
       - download/process images
       - create a ZIP for that chunk
-      - ALWAYS move to /static and show a direct link (no download_button)
+      - ALWAYS move to app/static and show a direct link (no download_button)
       - remove the chunk folder to free space
     Returns:
-      - zip_refs: list of static links (static/filename.zip)
+      - zip_refs: list of static links (app/static/filename.zip)
       - missing_images_bytes (global report)
       - missing_df (for on-screen table)
       - bundle_list_bytes (global report)
@@ -777,9 +771,9 @@ async def process_chunks_async(uploaded_file, progress_bar=None, layout="horizon
                     shutil.rmtree(base_folder_part, ignore_errors=True)
                     continue
 
-                url = move_to_static(zip_path_part)
+                url = move_to_static(zip_path_part)  # app/static/...
                 zip_refs.append(url)
-                # Render a plain link with download attribute (no button, no RAM)
+                # Plain link with download attribute (no button, no RAM)
                 st.markdown(
                     f'<a href="{url}" download target="_blank" rel="noopener">✅ Part {part_idx+1}/{num_parts}: Download ZIP</a>',
                     unsafe_allow_html=True
@@ -966,7 +960,7 @@ if uploaded_file is not None:
                 zip_refs, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
                     process_chunks_async(uploaded_file, progress_bar, layout=layout_choice, chunk_size=CHUNK_SIZE)
                 )
-                st.session_state["zip_refs"] = zip_refs  # list of static links
+                st.session_state["zip_refs"] = zip_refs  # list of app/static links
             else:
                 zip_path, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
                     process_file_async(uploaded_file, progress_bar, layout=layout_choice)
@@ -996,21 +990,23 @@ if uploaded_file is not None:
 if st.session_state.get("processing_complete_bundle", False):
     st.markdown("---")
 
-    # Chunk mode: show all chunk links (served from static/)
+    # Chunk mode: show all chunk links (served from app/static/)
     if "zip_refs" in st.session_state and st.session_state["zip_refs"]:
         st.subheader("Chunk downloads")
         for idx, url in enumerate(st.session_state["zip_refs"], start=1):
-            # Always links, no download_button
             st.markdown(
                 f'<a href="{url}" download target="_blank" rel="noopener">✅ Part {idx}: Download ZIP</a>',
                 unsafe_allow_html=True
             )
 
-    # Single ZIP mode (kept as before; small files via button, large via static link)
+    # Single ZIP mode (small -> button; large -> app/static link)
     elif st.session_state.get("zip_path"):
         zip_ref = st.session_state["zip_path"]
-        if isinstance(zip_ref, str) and zip_ref.startswith("static/"):
-            st.markdown(f'<a href="{zip_ref}" download target="_blank" rel="noopener">⬇️ Download Bundle Images (ZIP)</a>', unsafe_allow_html=True)
+        if isinstance(zip_ref, str) and zip_ref.startswith("app/static/"):
+            st.markdown(
+                f'<a href="{zip_ref}" download target="_blank" rel="noopener">⬇️ Download Bundle Images (ZIP)</a>',
+                unsafe_allow_html=True
+            )
         elif os.path.exists(zip_ref):
             with open(zip_ref, "rb") as f:
                 st.download_button(
