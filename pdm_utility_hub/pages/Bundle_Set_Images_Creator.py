@@ -86,7 +86,7 @@ st.markdown(
         cursor: pointer;
     }
     .app-button-link:hover {
-        box_shadow: 0 2px 4px rgba(0,0,0,0.08);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
     }
     .app-button-placeholder {
         opacity: 0.7;
@@ -132,13 +132,13 @@ def clear_old_data():
     if os.path.exists(bundle_list_excel_path):
         os.remove(bundle_list_excel_path)
     # Clean up all generated zip files
-    for f_name in os.listdir('.'):
-        if f_name.startswith(f"Bundle&Set_archive_{session_id}_") and f_name.endswith('.zip'):
+    for f_name in os.listdir("."):
+        if f_name.startswith(f"Bundle&Set_archive_{session_id}_") and f_name.endswith(".zip"):
             os.remove(f_name)
 
 # ---------------------- Helper Functions ----------------------
 async def async_download_image(product_code, extension, session):
-    if product_code.startswith(('1', '0')):
+    if product_code.startswith(("1", "0")):
         product_code = f"D{product_code}"
     url = f"https://cdn.shop-apotheke.com/images/{product_code}-p{extension}.jpg"
     try:
