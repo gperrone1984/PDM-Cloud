@@ -10,16 +10,11 @@ import time
 from io import BytesIO
 from PIL import Image, ImageChops
 from cryptography.fernet import Fernet
-import zipfile
+import base64  # per auto-download
 
-# =====================
-# Global configuration
-# =====================
-JPEG_QUALITY = 100             # image quality (user prefers max)
-ZIP_MAX_FILES = 1000           # max files per ZIP part
-ZIP_COMPRESSLEVEL = 9          # strongest compression
-AUTO_SPLIT_THRESHOLD_FILES = 1000  # auto-split if more than this many files
-MAX_SINGLE_ZIP_BYTES = 600 * 1024 * 1024  # ~600 MB cap for single ZIP
+# --------- CONFIG ---------
+CHUNK_SIZE = 1000  # max bundle per ZIP/parte
+# --------------------------
 
 # Page configuration (MUST be the first operation)
 st.set_page_config(
@@ -36,81 +31,17 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
 st.markdown(
     """
     <style>
-    /* Set sidebar width to 540px and force it */
     [data-testid="stSidebar"] > div:first-child {
         width: 540px !important;
         min-width: 540px !important;
         max-width: 540px !important;
     }
-    /* Hide the auto-generated Streamlit sidebar navigation */
-    [data-testid="stSidebarNav"] {
-        display: none;
-    }
-    /* Make the internal container transparent while keeping padding/radius */
-    div[data-testid="stAppViewContainer"] > section > div.block-container {
-         background-color: transparent !important;
-         padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0.5rem !important;
-    }
+    [data-testid="stSidebarNav"] { display: none; }
+    div[data-testid="stAppViewContainer"] > section > div.block-container,
     .main .block-container {
          background-color: transparent !important;
          padding: 2rem 1rem 1rem 1rem !important;
          border-radius: 0.5rem !important;
-    }
-    /* Base style for app buttons/placeholder (from hub) - Adapted to the theme */
-    .app-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin-bottom: 1.5rem;
-    }
-    .app-button-link, .app-button-placeholder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 1.2rem 1.5rem;
-        border-radius: 0.5rem;
-        text-decoration: none;
-        font-weight: bold;
-        font-size: 1.05rem;
-        width: 90%;
-        min-height: 100px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-        margin-bottom: 0.75rem;
-        text-align: center;
-        line-height: 1.4;
-        transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-        border: 1px solid var(--border-color, #cccccc);
-    }
-    .app-button-link svg, .app-button-placeholder svg,
-    .app-button-link .icon, .app-button-placeholder .icon {
-         margin-right: 0.6rem;
-         flex-shrink: 0;
-    }
-    .app-button-link > div[data-testid="stText"] > span:before {
-        content: "" !important; margin-right: 0 !important;
-    }
-    .app-button-link {
-        cursor: pointer;
-    }
-    .app-button-link:hover {
-        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-    }
-    .app-button-placeholder {
-        opacity: 0.7;
-        cursor: default;
-        box-shadow: none;
-        border-style: dashed;
-    }
-    .app-button-placeholder .icon {
-         font-size: 1.5em;
-    }
-    .app-description {
-        font-size: 0.9em;
-        padding: 0 15px;
-        text-align: justify;
-        width: 90%;
-        margin: 0 auto;
     }
     </style>
     """,
@@ -129,40 +60,34 @@ if "bundle_creator_session_id" not in st.session_state:
 session_id = st.session_state["bundle_creator_session_id"]
 base_folder = f"Bundle&Set_{session_id}"
 
-# ---------------------- Helper: cleanup ----------------------
 def clear_old_data():
-    """Remove temp folders and any ZIP parts for the current session."""
-    # remove working folder
+    # pulizia root legacy e zip singolo eventualmente esistente
     if os.path.exists(base_folder):
         shutil.rmtree(base_folder)
-
-    # remove single zips (legacy & current)
-    legacy_zip_amp = f"Bundle&Set_{session_id}.zip"
-    single_zip = f"BundleSet_{session_id}.zip"
-    for zp in (legacy_zip_amp, single_zip):
-        if os.path.exists(zp):
+    zip_path = f"Bundle&Set_{session_id}.zip"
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+    # rimuovi anche eventuali chunk esistenti
+    for name in os.listdir("."):
+        if name.startswith(f"{base_folder}_part_"):
             try:
-                os.remove(zp)
+                if os.path.isdir(name):
+                    shutil.rmtree(name)
+                elif os.path.isfile(name):
+                    os.remove(name)
             except Exception:
                 pass
-
-    # remove multi-part zips
-    for fname in os.listdir("."):
-        if fname.startswith(f"BundleSet_{session_id}_") and fname.endswith(".zip"):
-            try:
-                os.remove(fname)
-            except Exception:
-                pass
-
-    # remove reports
+    # reports
     for p in (f"missing_images_{session_id}.xlsx", f"bundle_list_{session_id}.xlsx"):
         if os.path.exists(p):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
+            os.remove(p)
 
-# ---------------------- Image + Network Helpers ----------------------
+# ---------------------- Helper Functions ----------------------
+def chunk_root_for_index(idx_zero_based: int) -> str:
+    """Restituisce la root folder per il chunk in base all'indice riga (0-based)."""
+    part_no = (idx_zero_based // CHUNK_SIZE) + 1
+    return f"{base_folder}_part_{part_no}"
+
 async def async_download_image(product_code, extension, session):
     if product_code.startswith(('1', '0')):
         product_code = f"D{product_code}"
@@ -207,10 +132,7 @@ def process_double_bundle_image(image, layout="horizontal"):
         merged_image = Image.new("RGB", (merged_width, merged_height), (255, 255, 255))
         merged_image.paste(image, (0, 0))
         merged_image.paste(image, (width, 0))
-    if merged_width == 0 or merged_height == 0:
-        scale_factor = 1
-    else:
-        scale_factor = min(1000 / merged_width, 1000 / merged_height)
+    scale_factor = min(1000 / merged_width, 1000 / merged_height) if merged_width and merged_height else 1
     new_size = (int(merged_width * scale_factor), int(merged_height * scale_factor))
     resized_image = merged_image.resize(new_size, Image.LANCZOS)
     final_image = Image.new("RGB", (1000, 1000), (255, 255, 255))
@@ -244,10 +166,7 @@ def process_triple_bundle_image(image, layout="horizontal"):
         merged_image.paste(image, (0, 0))
         merged_image.paste(image, (width, 0))
         merged_image.paste(image, (width * 2, 0))
-    if merged_width == 0 or merged_height == 0:
-        scale_factor = 1
-    else:
-        scale_factor = min(1000 / merged_width, 1000 / merged_height)
+    scale_factor = min(1000 / merged_width, 1000 / merged_height) if merged_width and merged_height else 1
     new_size = (int(merged_width * scale_factor), int(merged_height * scale_factor))
     resized_image = merged_image.resize(new_size, Image.LANCZOS)
     final_image = Image.new("RGB", (1000, 1000), (255, 255, 255))
@@ -257,6 +176,7 @@ def process_triple_bundle_image(image, layout="horizontal"):
     return final_image
 
 def save_binary_file(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'wb') as f:
         f.write(data)
 
@@ -282,7 +202,7 @@ async def async_get_image_with_fallback(product_code, session):
     tasks = [async_download_image(product_code, ext, session) for ext in ["1", "10"]]
     results = await asyncio.gather(*tasks)
     for ext, result in zip(["1", "10"], results):
-        content, url = result
+        content, _ = result
         if content:
             return content, ext
     if fallback_ext and fallback_ext != "NL FR":
@@ -291,67 +211,10 @@ async def async_get_image_with_fallback(product_code, session):
             return content, fallback_ext
     return None, None
 
-# ---------------------- ZIP utils ----------------------
-def zip_folder_in_parts(folder: str, session_id: str,
-                        max_files_per_zip: int = ZIP_MAX_FILES) -> list[str]:
-    """Create multiple ZIP archives from `folder` to avoid a single huge file.
-    Returns list of created .zip file paths.
-    """
-    zip_paths: list[str] = []
-    part = 1
-    files_in_current = 0
-    current_zip_path = f"BundleSet_{session_id}_part{part}.zip"
-    zf = zipfile.ZipFile(
-        current_zip_path, "w",
-        compression=zipfile.ZIP_DEFLATED,
-        compresslevel=ZIP_COMPRESSLEVEL,
-    )
-
-    try:
-        for root, _, files in os.walk(folder):
-            for name in files:
-                full_path = os.path.join(root, name)
-                # keep a stable root inside the zip
-                arcname = os.path.join("Bundle&Set", os.path.relpath(full_path, folder))
-                zf.write(full_path, arcname=arcname)
-                files_in_current += 1
-
-                if files_in_current >= max_files_per_zip:
-                    zf.close()
-                    zip_paths.append(current_zip_path)
-                    part += 1
-                    files_in_current = 0
-                    current_zip_path = f"BundleSet_{session_id}_part{part}.zip"
-                    zf = zipfile.ZipFile(
-                        current_zip_path, "w",
-                        compression=zipfile.ZIP_DEFLATED,
-                        compresslevel=ZIP_COMPRESSLEVEL,
-                    )
-    finally:
-        zf.close()
-        # ensure last part is registered
-        if not zip_paths or zip_paths[-1] != current_zip_path:
-            zip_paths.append(current_zip_path)
-
-    return zip_paths
-
-def zip_folder_single(folder: str, session_id: str) -> str:
-    """Create a single ZIP archive from `folder` and return its path."""
-    zip_path = f"BundleSet_{session_id}.zip"
-    with zipfile.ZipFile(zip_path, "w",
-                         compression=zipfile.ZIP_DEFLATED,
-                         compresslevel=ZIP_COMPRESSLEVEL) as zf:
-        for root, _, files in os.walk(folder):
-            for name in files:
-                full_path = os.path.join(root, name)
-                arcname = os.path.join("Bundle&Set", os.path.relpath(full_path, folder))
-                zf.write(full_path, arcname=arcname)
-    return zip_path
-
 # ---------------------- Main Processing Function ----------------------
-async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal", split_every_1000=False):
+async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal"):
     session_id = st.session_state["bundle_creator_session_id"]
-    base_folder = f"Bundle&Set_{session_id}"
+    # base_folder usato solo come prefisso; i reali salvataggi vanno per chunk
     missing_images_excel_path = f"missing_images_{session_id}.xlsx"
     bundle_list_excel_path = f"bundle_list_{session_id}.xlsx"
 
@@ -389,16 +252,13 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         return None, None, None, None
 
     st.write(f"File loaded: {len(data)} bundles found.")
-    os.makedirs(base_folder, exist_ok=True)
 
-    mixed_sets_needed = False
-    mixed_folder = os.path.join(base_folder, "mixed_sets")
+    mixed_sets_needed_by_chunk = {}  # part_no -> bool
     error_list = []
     bundle_list = []
     total = len(data)
 
-    # reduce concurrency to avoid resource spikes
-    connector = aiohttp.TCPConnector(limit=40)
+    connector = aiohttp.TCPConnector(limit=100)
     async with aiohttp.ClientSession(connector=connector) as session:
         for i, (_, row) in enumerate(data.iterrows()):
             bundle_code = str(row['sku']).strip()
@@ -415,20 +275,24 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
             bundle_type = f"bundle of {num_products}" if is_uniform else "mixed"
             bundle_cross_country = False
 
+            # --- root del chunk corrente
+            chunk_root = chunk_root_for_index(i)
+            os.makedirs(chunk_root, exist_ok=True)
+
             if is_uniform:
                 product_code = product_codes[0]
                 folder_name_base = f"bundle_{num_products}"
                 if st.session_state.get("fallback_ext") in ["NL FR", "1-fr", "1-de", "1-nl"]:
                     folder_name_base = "cross-country"
-                folder_name = os.path.join(base_folder, folder_name_base)
+                folder_name = os.path.join(chunk_root, folder_name_base)
                 os.makedirs(folder_name, exist_ok=True)
 
                 result, used_ext = await async_get_image_with_fallback(product_code, session)
 
-                # --- Uniform Bundle: NL FR dictionary result with duplicate creation if only one exists ---
+                # --- Uniform Bundle: NL FR dict
                 if used_ext == "NL FR" and isinstance(result, dict):
                     bundle_cross_country = True
-                    folder_name = os.path.join(base_folder, "cross-country")
+                    folder_name = os.path.join(chunk_root, "cross-country")
                     os.makedirs(folder_name, exist_ok=True)
                     processed_lang = False
                     processed_keys = []
@@ -448,10 +312,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             else:
                                 final_img = img
                             save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
-                            await asyncio.to_thread(
-                                final_img.save, save_path, "JPEG",
-                                quality=JPEG_QUALITY, optimize=True, progressive=True
-                            )
+                            await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=100)
                             processed_lang = True
                             processed_keys.append(lang)
                         except Exception as e:
@@ -468,12 +329,9 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 else:
                                     final_img_dup = img_dup
                                 dup_save_path = os.path.join(folder_name, f"{bundle_code}-fr-h1.jpg")
-                                await asyncio.to_thread(
-                                    final_img_dup.save, dup_save_path, "JPEG",
-                                    quality=JPEG_QUALITY, optimize=True, progressive=True
-                                )
+                                await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=100)
                             except Exception as e:
-                                st.warning(f"Error duplicating image for missing 1-fr for bundle {bundle_code} (PZN: {product_code}): {e}")
+                                st.warning(f"Error duplicating image 1-fr for bundle {bundle_code}: {e}")
                                 error_list.append((bundle_code, f"{product_code} (dup 1-fr processing error)"))
                         elif "1-nl" not in processed_keys and "1-fr" in processed_keys:
                             try:
@@ -485,21 +343,18 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 else:
                                     final_img_dup = img_dup
                                 dup_save_path = os.path.join(folder_name, f"{bundle_code}-nl-h1.jpg")
-                                await asyncio.to_thread(
-                                    final_img_dup.save, dup_save_path, "JPEG",
-                                    quality=JPEG_QUALITY, optimize=True, progressive=True
-                                )
+                                await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=100)
                             except Exception as e:
-                                st.warning(f"Error duplicating image for missing 1-nl for bundle {bundle_code} (PZN: {product_code}): {e}")
+                                st.warning(f"Error duplicating image 1-nl for bundle {bundle_code}: {e}")
                                 error_list.append((bundle_code, f"{product_code} (dup 1-nl processing error)"))
-                    if not processed_lang:
+                    else:
                         error_list.append((bundle_code, f"{product_code} (NL/FR found but failed processing)"))
 
-                # --- Uniform Bundle: Fallback Single Image ---
+                # --- Uniform Bundle: singola immagine
                 elif result:
                     if used_ext in ["1-fr", "1-de", "1-nl"]:
                         bundle_cross_country = True
-                        folder_name = os.path.join(base_folder, "cross-country")
+                        folder_name = os.path.join(chunk_root, "cross-country")
                         os.makedirs(folder_name, exist_ok=True)
                     try:
                         img = await asyncio.to_thread(Image.open, BytesIO(result))
@@ -509,24 +364,14 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             final_img = await asyncio.to_thread(process_triple_bundle_image, img, layout)
                         else:
                             final_img = img
-                        # When fallback_ext is NL FR, create only the -nl-h1 and -fr-h1 images.
                         if st.session_state.get("fallback_ext") == "NL FR":
-                            save_path_nl = os.path.join(folder_name, f"{bundle_code}-nl-h1.jpg")
-                            save_path_fr = os.path.join(folder_name, f"{bundle_code}-fr-h1.jpg")
-                            await asyncio.to_thread(
-                                final_img.save, save_path_nl, "JPEG",
-                                quality=JPEG_QUALITY, optimize=True, progressive=True
-                            )
-                            await asyncio.to_thread(
-                                final_img.save, save_path_fr, "JPEG",
-                                quality=JPEG_QUALITY, optimize=True, progressive=True
-                            )
+                            # crea -nl-h1 e -fr-h1
+                            for suffix in ("-nl-h1", "-fr-h1"):
+                                save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
+                                await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=100)
                         else:
                             save_path = os.path.join(folder_name, f"{bundle_code}-h1.jpg")
-                            await asyncio.to_thread(
-                                final_img.save, save_path, "JPEG",
-                                quality=JPEG_QUALITY, optimize=True, progressive=True
-                            )
+                            await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=100)
                     except Exception as e:
                         st.warning(f"Error processing image for bundle {bundle_code} (PZN: {product_code}, Ext: {used_ext}): {e}")
                         error_list.append((bundle_code, f"{product_code} (Ext: {used_ext} processing error)"))
@@ -534,8 +379,9 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                     error_list.append((bundle_code, product_code))
 
             else:  # Mixed set
-                mixed_sets_needed = True
-                bundle_folder = os.path.join(mixed_folder, bundle_code)
+                part_no = (i // CHUNK_SIZE) + 1
+                mixed_sets_needed_by_chunk[part_no] = True
+                bundle_folder = os.path.join(chunk_root, "mixed_sets", bundle_code)
                 os.makedirs(bundle_folder, exist_ok=True)
                 item_is_cross_country = False
                 for p_code in product_codes:
@@ -556,11 +402,11 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             await asyncio.to_thread(save_binary_file, file_path, image_data)
                             processed_keys.append(lang)
                         if "1-fr" not in processed_keys and "1-nl" in processed_keys:
-                             file_path_dup = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
-                             await asyncio.to_thread(save_binary_file, file_path_dup, result["1-nl"])
+                            file_path_dup = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
+                            await asyncio.to_thread(save_binary_file, file_path_dup, result["1-nl"])
                         elif "1-nl" not in processed_keys and "1-fr" in processed_keys:
-                             file_path_dup = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
-                             await asyncio.to_thread(save_binary_file, file_path_dup, result["1-fr"])
+                            file_path_dup = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
+                            await asyncio.to_thread(save_binary_file, file_path_dup, result["1-fr"])
                     elif result:
                         prod_folder = bundle_folder
                         if used_ext in ["1-fr", "1-de", "1-nl"]:
@@ -568,10 +414,9 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             prod_folder = os.path.join(bundle_folder, "cross-country")
                             os.makedirs(prod_folder, exist_ok=True)
                         if st.session_state.get("fallback_ext") == "NL FR":
-                            file_path_nl = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
-                            file_path_fr = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
-                            await asyncio.to_thread(save_binary_file, file_path_nl, result)
-                            await asyncio.to_thread(save_binary_file, file_path_fr, result)
+                            for suffix in ("-nl-h1", "-fr-h1"):
+                                file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
+                                await asyncio.to_thread(save_binary_file, file_path, result)
                         else:
                             suffix = f"-p{used_ext}" if used_ext else "-h1"
                             file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
@@ -585,12 +430,18 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 progress_bar.progress((i + 1) / total, text=f"Processing {bundle_code} ({i+1}/{total})")
             bundle_list.append([bundle_code, ', '.join(product_codes), bundle_type, "Yes" if bundle_cross_country else "No"])
 
-    if not mixed_sets_needed and os.path.exists(mixed_folder):
-        try:
-            shutil.rmtree(mixed_folder)
-        except Exception as e:
-            st.warning(f"Could not remove unused mixed folder: {e}")
+    # rimuovi cartelle mixed vuote per ogni chunk
+    max_part = (len(data) - 1) // CHUNK_SIZE + 1
+    for part_no in range(1, max_part + 1):
+        chunk_root = f"{base_folder}_part_{part_no}"
+        mixed_folder = os.path.join(chunk_root, "mixed_sets")
+        if not mixed_sets_needed_by_chunk.get(part_no, False) and os.path.exists(mixed_folder):
+            try:
+                shutil.rmtree(mixed_folder)
+            except Exception as e:
+                st.warning(f"Could not remove unused mixed folder in part {part_no}: {e}")
 
+    # --- Reports (unici per run) ---
     missing_images_data = None
     missing_images_df = pd.DataFrame(columns=["PZN Bundle", "PZN with image missing"])
     if error_list:
@@ -603,10 +454,9 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
             with open(missing_images_excel_path, "rb") as f_csv:
                 missing_images_data = f_csv.read()
         except Exception as e:
-             st.error(f"Failed to save or read missing images Excel file: {e}")
+            st.error(f"Failed to save or read missing images Excel file: {e}")
 
     bundle_list_data = None
-    bundle_list_df = pd.DataFrame(columns=["sku", "pzns_in_set", "bundle type", "cross-country"])
     if bundle_list:
         bundle_list_df = pd.DataFrame(bundle_list, columns=["sku", "pzns_in_set", "bundle type", "cross-country"])
         try:
@@ -616,47 +466,82 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         except Exception as e:
             st.error(f"Failed to save or read bundle list Excel file: {e}")
 
-    # ---- ZIP creation (single or multi-part) on disk ----
-    zip_paths = []
-    if os.path.exists(base_folder) and any(os.scandir(base_folder)):
+    # --- Crea ZIP per ogni chunk ---
+    zip_artifacts = []  # [(display_name, bytes)]
+    chunk_roots = []
+    if total > 0:
+        # compute quante parti
+        parts = (total - 1) // CHUNK_SIZE + 1
+        for part_no in range(1, parts + 1):
+            chunk_root = f"{base_folder}_part_{part_no}"
+            chunk_roots.append(chunk_root)
+
+    for part_no, chunk_root in enumerate(chunk_roots, start=1):
+        if not os.path.exists(chunk_root) or not any(os.scandir(chunk_root)):
+            continue
+        temp_parent = f"{chunk_root}_temp"
+        if os.path.exists(temp_parent):
+            shutil.rmtree(temp_parent)
+        os.makedirs(temp_parent, exist_ok=True)
+        zip_content_folder = os.path.join(temp_parent, "Bundle&Set")
         try:
-            # decide automatically to split if too many files or too big
-            file_count = 0
-            total_bytes = 0
-            for root, _, files in os.walk(base_folder):
-                file_count += len(files)
-                for name in files:
-                    try:
-                        total_bytes += os.path.getsize(os.path.join(root, name))
-                    except OSError:
-                        pass
-
-            do_split = split_every_1000 or file_count > AUTO_SPLIT_THRESHOLD_FILES or total_bytes > MAX_SINGLE_ZIP_BYTES
-
-            if do_split:
-                if not split_every_1000:
-                    st.warning(f"Large output detected ({file_count} files, ~{total_bytes/1024/1024:.1f} MB). For stability, the app automatically split the archive into parts of 1000 files.")
-                # split into parts of 1000 files each
-                zip_paths = zip_folder_in_parts(base_folder, session_id, ZIP_MAX_FILES)
-            else:
-                # single zip
-                zp = zip_folder_single(base_folder, session_id)
-                zip_paths = [zp]
+            shutil.copytree(chunk_root, zip_content_folder)
         except Exception as e:
-            st.error(f"Error during zipping process: {e}")
-    else:
-        st.info("Processing complete, but no images were saved to create a ZIP file.")
-        try:
-            os.rmdir(base_folder)
-        except OSError:
+            st.error(f"Error copying files for zipping (part {part_no}): {e}")
             try:
-                shutil.rmtree(base_folder)
-            except Exception as e:
-                st.warning(f"Could not remove base folder {base_folder}: {e}")
+                shutil.rmtree(temp_parent)
+            except Exception:
+                pass
+            continue
 
-    return zip_paths, missing_images_data, missing_images_df, bundle_list_data
+        zip_base_name = f"{chunk_root}_archive"
+        final_zip_path = f"{zip_base_name}.zip"
+        display_name = f"BundleSet_{session_id}_part_{part_no}.zip"
+
+        try:
+            shutil.make_archive(base_name=zip_base_name, format='zip', root_dir=temp_parent)
+            if os.path.exists(final_zip_path):
+                with open(final_zip_path, "rb") as zip_file:
+                    zip_bytes = zip_file.read()
+                zip_artifacts.append((display_name, zip_bytes))
+                os.remove(final_zip_path)
+            else:
+                st.error(f"Failed to create ZIP archive for part {part_no}.")
+        except Exception as e:
+            st.error(f"Error during zipping process (part {part_no}): {e}")
+        finally:
+            try:
+                shutil.rmtree(temp_parent)
+            except Exception:
+                pass
+
+    # opzionale: pulizia chunk folder locali dopo zip (commenta se vuoi conservarle)
+    # for chunk_root in chunk_roots:
+    #     try:
+    #         shutil.rmtree(chunk_root)
+    #     except Exception:
+    #         pass
+
+    return zip_artifacts, missing_images_data, missing_images_df, bundle_list_data
 
 # ---------------------- End of Function Definitions ----------------------
+
+# --- Helper per auto-download ZIP multipli ---
+def auto_download_zip(zip_bytes: bytes, filename: str):
+    """Crea un link base64 e lo clicca automaticamente (senza bottone)."""
+    b64 = base64.b64encode(zip_bytes).decode()
+    href = f"data:application/zip;base64,{b64}"
+    components.html(f"""
+    <html>
+      <body>
+        <a id="__auto_dl" href="{href}" download="{filename}"></a>
+        <script>
+          const a = document.getElementById('__auto_dl');
+          setTimeout(() => a.click(), 150);
+        </script>
+      </body>
+    </html>
+    """, height=0)
 
 st.title("PDM Bundle&Set Image Creator")
 
@@ -669,7 +554,7 @@ st.markdown(
        - File Type: **CSV** or **Excel** - All Attributes or Grid Context (for Grid Context, select ID and PZN included in the set) - **With Codes** - **Without Media**
     3. **Choose the language for language specific photos:** (if needed)
     4. **Choose bundle layout:** (Horizontal, Vertical, or Automatic)
-    5. Click **Process file** to start the process.
+    5. Click **Process CSV** to start the process.
     6. Download the files.
     7. **Before starting a new process, click on Clear Cache and Reset Data.**
     """
@@ -678,9 +563,10 @@ st.markdown(
 if st.button("🧹 Clear Cache and Reset Data"):
     keys_to_remove = [
         "bundle_creator_session_id", "encryption_key", "fallback_ext",
-        "zip_paths", "bundle_list_data", "missing_images_data",
+        "zip_artifacts", "bundle_list_data", "missing_images_data",
         "missing_images_df", "processing_complete_bundle",
-        "file_uploader", "preview_pzn_bundle", "sidebar_ext_bundle"
+        "file_uploader", "preview_pzn_bundle", "sidebar_ext_bundle",
+        "auto_download_enabled", "auto_dl_done_set"  # reset autodownload
     ]
     for key in keys_to_remove:
         if key in st.session_state:
@@ -689,8 +575,6 @@ if st.button("🧹 Clear Cache and Reset Data"):
     st.cache_resource.clear()
     try:
         clear_old_data()
-    except NameError:
-        st.warning("Could not execute clear_old_data function (might be expected after state clear).")
     except Exception as e:
         st.warning(f"Error during clear_old_data: {e}")
     st.success("Cache and session data cleared. Ready for a new task.")
@@ -702,14 +586,13 @@ if st.button("🧹 Clear Cache and Reset Data"):
 st.sidebar.header("What This App Does")
 st.sidebar.markdown(
     """
-    - ❓ **Automated Bundle&Set Creation:** Automatically create product bundles and mixed sets by downloading and organizing images;
-    - 🔎 **Language Selection:** Choose the language if you have language-specific photos. NL-FR, DE, FR;
-    - 🔎 **Choose the layout for double/triple bundles:** Automatic, Horizontal or Vertical;
-    - ✏️ **Dynamic Processing:** Combine images (double/triple) with proper resizing;
-    - ✏️ **Rename images** using the specific bundle&set code (e.g. -h1, -p1-fr, -p1-nl, etc);
-    - ❌ **Error Logging:** Missing images are logged in a CSV ;
-    - 📥 **Download:** Get ZIP(s) with all processed images and reports;
-    - 🌐 **Interactive Preview:** Preview and download individual product images from the sidebar.
+    - ❓ **Automated Bundle&Set Creation**
+    - 🔎 **Language Selection** (NL-FR, DE, FR)
+    - 🔎 **Layout** (Automatic, Horizontal, Vertical)
+    - ✏️ **Dynamic Processing** (double/triple)
+    - ✏️ **Rename images** (e.g. -h1, -p1-fr, -p1-nl)
+    - ❌ **Error Logging**
+    - 📥 **Download ZIP in parti da 1000**
     """, unsafe_allow_html=True
 )
 
@@ -765,6 +648,12 @@ if show_image and product_code_preview:
     elif 'fetch_status_code' in locals() and fetch_status_code is not None:
          st.sidebar.error(f"Failed to fetch image (Status: {fetch_status_code}) for {product_code_preview} with -p{selected_extension}.jpg")
 
+# --- Checkbox per auto-download multiplo (prima di avviare il processing) ---
+st.session_state["auto_download_enabled"] = st.checkbox(
+    "Auto-download al termine (tutte le parti)",
+    value=st.session_state.get("auto_download_enabled", False)
+)
+
 uploaded_file = st.file_uploader("**Upload CSV File**", type=["csv", "xlsx"], key="file_uploader")
 if uploaded_file is not None:
     col1, col2 = st.columns(2)
@@ -779,68 +668,68 @@ if uploaded_file is not None:
     else:
         if "fallback_ext" in st.session_state:
             del st.session_state["fallback_ext"]
-
-    col_btn, col_chk = st.columns([1, 3])
-    with col_chk:
-        split_zip_1000 = st.checkbox("Create a ZIP file every 1000 products (recommended for large jobs)", value=False, key="split_zip_1000")
-    with col_btn:
-        if st.button("Process file", key="process_csv_bundle"):
-            start_time = time.time()
-            progress_bar = st.progress(0, text="Starting processing...")
-            st.session_state["zip_paths"] = None
-            st.session_state["bundle_list_data"] = None
-            st.session_state["missing_images_data"] = None
-            st.session_state["missing_images_df"] = None
-            st.session_state["processing_complete_bundle"] = False
-            try:
-                if 'process_file_async' not in globals():
-                    st.error("Critical error: Processing function is not defined.")
-                    st.stop()
-                zip_paths, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
-                    process_file_async(uploaded_file, progress_bar, layout=layout_choice, split_every_1000=split_zip_1000)
-                )
-                progress_bar.progress(1.0, text="Processing Complete!")
-                elapsed_time = time.time() - start_time
-                minutes = int(elapsed_time // 60)
-                seconds = int(elapsed_time % 60)
-                st.success(f"Processing finished in {minutes}m {seconds}s.")
-                st.session_state["zip_paths"] = zip_paths
-                st.session_state["bundle_list_data"] = bundle_list_data
-                st.session_state["missing_images_data"] = missing_images_data
-                st.session_state["missing_images_df"] = missing_images_df
-                st.session_state["processing_complete_bundle"] = True
-                time.sleep(1.5)
-                progress_bar.empty()
-            except Exception as e:
-                progress_bar.empty()
-                st.error(f"An error occurred during processing: {e}")
-                import traceback
-                st.error(f"Traceback: {traceback.format_exc()}")
-                st.session_state["processing_complete_bundle"] = False
+    if st.button("Process CSV", key="process_csv_bundle"):
+        start_time = time.time()
+        progress_bar = st.progress(0, text="Starting processing...")
+        st.session_state["zip_artifacts"] = []
+        st.session_state["bundle_list_data"] = None
+        st.session_state["missing_images_data"] = None
+        st.session_state["missing_images_df"] = None
+        st.session_state["processing_complete_bundle"] = False
+        # reset del set che traccia quali parti sono già state auto-scaricate
+        st.session_state["auto_dl_done_set"] = set()
+        try:
+            if 'process_file_async' not in globals():
+                 st.error("Critical error: Processing function is not defined.")
+                 st.stop()
+            zip_artifacts, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
+                process_file_async(uploaded_file, progress_bar, layout=layout_choice)
+            )
+            progress_bar.progress(1.0, text="Processing Complete!")
+            elapsed_time = time.time() - start_time
+            minutes = int(elapsed_time // 60)
+            seconds = int(elapsed_time % 60)
+            st.success(f"Processing finished in {minutes}m {seconds}s.")
+            st.session_state["zip_artifacts"] = zip_artifacts  # lista di parti
+            st.session_state["bundle_list_data"] = bundle_list_data
+            st.session_state["missing_images_data"] = missing_images_data
+            st.session_state["missing_images_df"] = missing_images_df
+            st.session_state["processing_complete_bundle"] = True
+            time.sleep(1.0)
+            progress_bar.empty()
+        except Exception as e:
+             progress_bar.empty()
+             st.error(f"An error occurred during processing: {e}")
+             import traceback
+             st.error(f"Traceback: {traceback.format_exc()}")
+             st.session_state["processing_complete_bundle"] = False
 
 if st.session_state.get("processing_complete_bundle", False):
     st.markdown("---")
-    # Multi-part or single ZIP downloads (from disk, not from memory)
-    if st.session_state.get("zip_paths"):
-        st.subheader("Download bundle images")
-        for idx, zp in enumerate(st.session_state["zip_paths"], start=1):
-            try:
-                size_mb = os.path.getsize(zp) / 1024 / 1024 if os.path.exists(zp) else 0
-                with open(zp, "rb") as fh:
-                    st.download_button(
-                        label=f"Download ZIP ({'part ' + str(idx) if len(st.session_state['zip_paths']) > 1 else 'single'}) – {size_mb:.1f} MB",
-                        data=fh,  # file-like handle; Streamlit will read it
-                        file_name=os.path.basename(zp),
-                        mime="application/zip",
-                        key=f"dl_zip_bundle_part_{idx}"
-                    )
-                if size_mb > 600:
-                    st.warning(f"{os.path.basename(zp)} is very large (>600 MB). If your browser struggles to download, enable split into 1000-file parts.")
-            except Exception as e:
-                st.error(f"Cannot open {zp}: {e}")
+    # --- Autodownload per ogni parte, se attivato ---
+    parts = st.session_state.get("zip_artifacts", [])
+    if parts:
+        st.subheader("ZIP parts")
+        for idx, (name, data_bytes) in enumerate(parts, start=1):
+            # autodownload singola parte se abilitato e non già fatto
+            if st.session_state.get("auto_download_enabled"):
+                done_set = st.session_state.get("auto_dl_done_set", set())
+                if name not in done_set:
+                    auto_download_zip(data_bytes, filename=name)
+                    done_set.add(name)
+                    st.session_state["auto_dl_done_set"] = done_set
+            # Fallback: bottone di download per ogni parte
+            st.download_button(
+                label=f"⬇️ Download {name}",
+                data=data_bytes,
+                file_name=name,
+                mime="application/zip",
+                key=f"dl_zip_bundle_part_{idx}"
+            )
     else:
-        st.info("Processing complete, but no ZIP files were generated.")
+        st.info("Nessun ZIP generato (nessuna immagine salvata).")
 
+    # Report unici
     if st.session_state.get("bundle_list_data"):
         st.download_button(
             label="Download Bundle List",
@@ -850,7 +739,7 @@ if st.session_state.get("processing_complete_bundle", False):
             key="dl_list_bundle_v"
         )
     else:
-        st.info("Processing complete, but no bundle list report was generated.")
+        st.info("Nessun report bundle list generato.")
 
     missing_df = st.session_state.get("missing_images_df")
     if missing_df is not None:
