@@ -718,7 +718,7 @@ elif server_country == "Medipim":
     if "missing_lists" not in st.session_state:
         st.session_state["missing_lists"] = {}
 
-  import os
+import os
 import io
 import time
 import json
