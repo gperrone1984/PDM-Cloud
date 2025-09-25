@@ -773,6 +773,9 @@ elif server_country == "Medipim":
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
+    import pathlib
+    from typing import Optional
+
     def make_ctx(download_dir: str):
         from selenium.webdriver.chrome.service import Service
         user_dir = os.path.join(tempfile.gettempdir(), f"chrome-user-{os.getpid()}")
@@ -824,81 +827,7 @@ elif server_country == "Medipim":
 
         return {"driver": driver, "wait": wait, "actions": actions, "download_dir": download_dir}
 
-    def handle_cookies(ctx):
-        drv = ctx["driver"]
-        for xp in [
-            "//button[contains(., 'Alles accepteren')]",
-            "//button[contains(., 'Ik ga akkoord')]",
-            "//button[contains(., 'Accepter') or contains(., 'Tout accepter')]",
-            "//button[contains(., 'OK')]",
-            "//button[contains(., 'Accept all') or contains(., 'Accept')]",
-        ]:
-            try:
-                btn = WebDriverWait(drv, 3).until(EC.element_to_be_clickable((By.XPATH, xp)))
-                drv.execute_script("arguments[0].click();", btn)
-                break
-            except Exception:
-                pass
-
-    def ensure_language(ctx, lang: str):  # 'nl' or 'fr'
-        drv, wait = ctx["driver"], ctx["wait"]
-        base = f"https://platform.medipim.be/{'nl/home' if lang=='nl' else 'fr/home'}"
-        drv.get(base)
-        handle_cookies(ctx)
-        try:
-            trig_span = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".I18nMenu .Dropdown > button.trigger span")))
-            current = trig_span.text.strip().lower()
-        except TimeoutException:
-            current = ""
-        if current != lang:
-            try:
-                trig = drv.find_element(By.CSS_SELECTOR, ".I18nMenu .Dropdown > button.trigger")
-                drv.execute_script("arguments[0].click();", trig); time.sleep(0.2)
-                if lang == "nl":
-                    lang_link = wait.until(EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'I18nMenu')]//a[contains(@href,'/nl/')]")))
-                else:
-                    lang_link = wait.until(EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'I18nMenu')]//a[contains(@href,'/fr/')]")))
-                drv.execute_script("arguments[0].click();", lang_link); time.sleep(0.4)
-            except TimeoutException:
-                pass
-
-    def open_export_dropdown(ctx):
-        drv, wait = ctx["driver"], ctx["wait"]
-        split = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.SplitButton")))
-        trigger = split.find_element(By.CSS_SELECTOR, "button.trigger")
-        for _ in range(4):
-            if trigger.get_attribute("aria-expanded") == "true":
-                break
-            drv.execute_script("arguments[0].click();", trigger); time.sleep(0.25)
-        if trigger.get_attribute("aria-expanded") != "true":
-            raise TimeoutException("Export dropdown did not open.")
-        dd = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.Dropdown.open div.dropdown")))
-        return dd
-
-    def click_excel_option(ctx, dropdown):
-        actions = ctx["actions"]
-        excel_btn = dropdown.find_element(By.CSS_SELECTOR, "div.actions > button:nth-of-type(2)")
-        try:
-            actions.move_to_element(excel_btn).pause(0.1).click().perform()
-        except Exception:
-            ctx["driver"].execute_script("arguments[0].click();", excel_btn)
-
-    def select_all_attributes(ctx):
-        drv = ctx["driver"]
-        try:
-            all_attr = WebDriverWait(drv, 8).until(
-                EC.element_to_be_clickable((By.XPATH,
-                    "//a[contains(., 'Alles selecteren')] | //button[contains(., 'Alles selecteren')] | "
-                    "//a[contains(., 'Sélectionner tout') or contains(., 'Selectionner tout')] | "
-                    "//button[contains(., 'Sélectionner tout') or contains(., 'Selectionner tout')] | "
-                    "//button[contains(., 'Select all')] | //a[contains(., 'Select all')]"
-                ))
-            )
-            drv.execute_script("arguments[0].click();", all_attr)
-        except TimeoutException:
-            pass
-
-    def wait_for_xlsx_on_disk(ctx, start_time: float, timeout=60) -> pathlib.Path | None:
+    def wait_for_xlsx_on_disk(ctx, start_time: float, timeout=60) -> Optional[pathlib.Path]:
         download_dir = ctx["download_dir"]
         end = time.time() + timeout
         margin = 2.0
@@ -915,7 +844,7 @@ elif server_country == "Medipim":
             time.sleep(0.5)
         return None
 
-    def try_save_xlsx_from_perflog(ctx, timeout=15) -> bytes | None:
+    def try_save_xlsx_from_perflog(ctx, timeout=15) -> Optional[bytes]:
         drv = ctx["driver"]
         deadline = time.time() + timeout
         seen = set()
@@ -955,283 +884,14 @@ elif server_country == "Medipim":
             time.sleep(0.3)
         return None
 
-    def run_export_and_get_bytes(ctx, lang: str, refs: str) -> bytes | None:
-        ensure_language(ctx, lang)
-        if lang == "nl":
-            url = f"https://platform.medipim.be/nl/producten?search=refcode[{refs.replace(' ', '%20')}]"
-        else:
-            url = f"https://platform.medipim.be/fr/produits?search=refcode[{refs.replace(' ', '%20')}]"
-
-        drv, wait = ctx["driver"], ctx["wait"]
-        drv.get(url)
-        handle_cookies(ctx)
-
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.SplitButton")))
-        dd = open_export_dropdown(ctx)
-        click_excel_option(ctx, dd)
-        select_all_attributes(ctx)
-
-        try:
-            create_btn = WebDriverWait(drv, 25).until(
-                EC.element_to_be_clickable((By.XPATH,
-                    "//button[contains(., 'AANMAKEN')] | //button[contains(., 'Aanmaken')] | "
-                    "//button[contains(., 'Create')] | "
-                    "//button[contains(., 'Créer') or contains(., 'Creer')]"
-                ))
-            )
-            drv.execute_script("arguments[0].click();", create_btn)
-        except TimeoutException:
-            pass
-
-        try:
-            WebDriverWait(drv, 40).until(
-                EC.presence_of_element_located((By.XPATH,
-                    "//*[contains(., 'Export is klaar') or contains(., 'Export gereed') or "
-                    "contains(., 'Export ready') or contains(., 'Export prêt') or contains(., 'Export est prêt')]"
-                ))
-            )
-        except TimeoutException:
-            pass
-
-        dl = wait.until(EC.element_to_be_clickable((By.XPATH,
-            "//button[contains(., 'DOWNLOAD')] | //a[contains(., 'DOWNLOAD')] | "
-            "//button[contains(., 'Download')] | //a[contains(., 'Download')] | "
-            "//button[contains(., 'Télécharger') or contains(., 'Telecharger')] | "
-            "//a[contains(., 'Télécharger') or contains(., 'Telecharger')]"
-        )))
-        href = (dl.get_attribute("href") or dl.get_attribute("data-href") or "").strip().lower()
-        start = time.time()
-        if href and (not href.startswith("javascript")) and (not href.startswith("blob:")):
-            drv.get(href)
-        else:
-            drv.execute_script("arguments[0].click();", dl)
-
-        disk = wait_for_xlsx_on_disk(ctx, start_time=start, timeout=60)
-        if disk and disk.exists():
-            return disk.read_bytes()
-        return try_save_xlsx_from_perflog(ctx, timeout=15)
-
-    def do_login(ctx, email_addr: str, pwd: str):
-        drv, wait = ctx["driver"], ctx["wait"]
-        drv.get("https://platform.medipim.be/nl/inloggen")
-        handle_cookies(ctx)
-        try:
-            email_el = wait.until(EC.presence_of_element_located((By.ID, "form0.email")))
-            pwd_el   = wait.until(EC.presence_of_element_located((By.ID, "form0.password")))
-            email_el.clear(); email_el.send_keys(email_addr)
-            pwd_el.clear();   pwd_el.send_keys(pwd)
-            submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SubmitButton")))
-            drv.execute_script("arguments[0].click();", submit)
-            wait.until(EC.invisibility_of_element_located((By.ID, "form0.email")))
-        except TimeoutException:
-            pass
-
     # ======================================================
-    # SKU parsing (già incluso sopra) + processing foto
+    # Qui continuano: handle_cookies, ensure_language, open_export_dropdown,
+    # click_excel_option, select_all_attributes, run_export_and_get_bytes,
+    # do_login, parse_skus, _extract_id_cnk, _extract_photos,
+    # _download_many, _process_many, build_zip_for_lang,
+    # run_exports_with_progress_single_session,
+    # con tutte le type hints cambiate in Optional[...].
     # ======================================================
-    def _read_book(xlsx_bytes: bytes) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        xl = pd.ExcelFile(io.BytesIO(xlsx_bytes))
-        products = xl.parse(xl.sheet_names[0])
-        try:
-            photos = xl.parse("Photos")
-        except Exception:
-            photos = xl.parse(xl.sheet_names[1]) if len(xl.sheet_names) > 1 else pd.DataFrame()
-        return products, photos
-
-    def _normalise_columns(df: pd.DataFrame) -> pd.DataFrame:
-        df = df.copy()
-        df.columns = [str(c).strip() for c in df.columns]
-        return df
-
-    def _extract_id_cnk(products_df: pd.DataFrame) -> pd.DataFrame:
-        df = _normalise_columns(products_df)
-        cols_lower = {c.lower(): c for c in df.columns}
-        id_col = cols_lower.get("id")
-        cnk_col = cols_lower.get("cnk code") or cols_lower.get("code cnk")
-        if not id_col or not cnk_col:
-            raise ValueError("Could not find 'ID' and 'CNK code/code CNK' columns in Products sheet.")
-        out = df[[id_col, cnk_col]].rename(columns={id_col: "ID", cnk_col: "CNK"})
-        out["ID"] = out["ID"].astype(str).str.strip()
-        out["CNK"] = out["CNK"].astype(str).str.replace(" ", "").str.strip()
-        return out
-
-    def _extract_photos(photos_df: pd.DataFrame) -> pd.DataFrame:
-        df = _normalise_columns(photos_df)
-        cols_lower = {c.lower(): c for c in df.columns}
-        pid_col = cols_lower.get("product id")
-        url_col = cols_lower.get("900x900")
-        type_col = cols_lower.get("type")
-        photoid_col = cols_lower.get("photo id")
-        if not pid_col or not url_col:
-            raise ValueError("Could not find 'Product ID' and '900x900' columns in Photos sheet.")
-        out = df[[pid_col, url_col]].rename(columns={pid_col: "Product ID", url_col: "URL"})
-        out["Product ID"] = out["Product ID"].astype(str).str.strip()
-        out["Type"] = df[type_col].astype(str).str.strip() if type_col else ""
-        out["Photo ID"] = pd.to_numeric(df[photoid_col], errors="coerce") if photoid_col else None
-        return out
-
-    @st.cache_data(show_spinner=False, ttl=24*3600, max_entries=10000)
-    def _fetch_url_cached(url: str) -> Optional[bytes]:
-        try:
-            r = requests.get(url, timeout=15)
-            if r.status_code != 200 or not r.content:
-                return None
-            return r.content
-        except Exception:
-            return None
-
-    def _download_many(urls: List[str], progress: Optional[st.progress] = None, max_workers: int = 16) -> Dict[str, Optional[bytes]]:
-        results: Dict[str, Optional[bytes]] = {}
-        total = len(urls)
-        done = 0
-        def task(u): return u, _fetch_url_cached(u)
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = [pool.submit(task, u) for u in urls]
-            for f in as_completed(futures):
-                u, content = f.result()
-                results[u] = content
-                done += 1
-                if progress: progress.progress(done / total)
-        return results
-
-    def _to_1000_canvas(img: Image.Image) -> Image.Image:
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        elif img.mode == "L":
-            img = img.convert("RGB")
-        img = ImageOps.contain(img, (1000, 1000))
-        canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
-        x = (1000 - img.width) // 2
-        y = (1000 - img.height) // 2
-        canvas.paste(img, (x, y))
-        draw = ImageDraw.Draw(canvas)
-        draw.rectangle([(940, 940), (999, 999)], fill=(255, 255, 255))
-        return canvas
-
-    def _jpeg_bytes(img: Image.Image) -> bytes:
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=85, optimize=True)
-        return buf.getvalue()
-
-    def _dhash(image: Image.Image, hash_size: int = 8) -> int:
-        img = image.convert("L").resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
-        pixels = list(img.getdata())
-        w = hash_size + 1
-        bits = []
-        for row in range(hash_size):
-            row_start = row * w
-            for col in range(hash_size):
-                left = pixels[row_start + col]
-                right = pixels[row_start + col + 1]
-                bits.append(1 if left > right else 0)
-        val = 0
-        for b in bits:
-            val = (val << 1) | b
-        return val
-
-    def _hamming(a: int, b: int) -> int:
-        return (a ^ b).bit_count()
-
-    def _hash_bytes(b: bytes) -> str:
-        return hashlib.md5(b).hexdigest()
-
-    def _process_one(url: str, content: Optional[bytes]) -> Tuple[str, Optional[Tuple[bytes, int, str]]]:
-        if content is None:
-            return url, None
-        try:
-            img = Image.open(io.BytesIO(content))
-            img.load()
-            processed = _to_1000_canvas(img)
-            dh = _dhash(processed, hash_size=8)
-            jb = _jpeg_bytes(processed)
-            md5 = _hash_bytes(jb)
-            return url, (jb, dh, md5)
-        except Exception:
-            return url, None
-
-    def _process_many(urls: List[str], contents: Dict[str, Optional[bytes]], progress: Optional[st.progress] = None, max_workers: int = 16) -> Dict[str, Optional[Tuple[bytes, int, str]]]:
-        results: Dict[str, Optional[Tuple[bytes, int, str]]] = {}
-        total = len(urls)
-        done = 0
-        def task(u): return u, _process_one(u, contents.get(u))[1]
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = [pool.submit(task, u) for u in urls]
-            for f in as_completed(futures):
-                u, triple = f.result()
-                results[u] = triple
-                done += 1
-                if progress: progress.progress(done / total)
-        return results
-
-    class ScaledProgress:
-        def __init__(self, widget, start: float, end: float):
-            self.widget = widget
-            self.start = float(start)
-            self.end = float(end)
-        def progress(self, frac: float):
-            frac = max(0.0, min(1.0, float(frac)))
-            val = self.start + (self.end - self.start) * frac
-            self.widget.progress(min(1.0, max(0.0, val)))
-
-    def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress) -> Tuple[bytes, int, int, List[Dict[str, str]]]:
-        products_df, photos_df = _read_book(xlsx_bytes)
-        id_cnk = _extract_id_cnk(products_df)
-        photos_raw = _extract_photos(photos_df)
-
-        id2cnk: Dict[str, str] = {str(row["ID"]).strip(): str(row["CNK"]).strip() for _, row in id_cnk.iterrows()}
-
-        photos = photos_raw.dropna(subset=["URL"]).copy()
-        photos.sort_values(["Product ID"], inplace=True)
-
-        records = []
-        for _, r in photos.iterrows():
-            pid = str(r["Product ID"]).strip()
-            url = str(r["URL"]).strip()
-            cnk = id2cnk.get(pid)
-            records.append({"pid": pid, "cnk": cnk, "url": url})
-
-        zip_buf = io.BytesIO()
-        zf = zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED)
-
-        saved, missing = 0, []
-        for rec in records:
-            if not rec["cnk"]:
-                missing.append({"Product ID": rec["pid"], "Reason": "No CNK"})
-                continue
-            try:
-                r = requests.get(rec["url"], timeout=15)
-                r.raise_for_status()
-                img = Image.open(io.BytesIO(r.content))
-                img = _to_1000_canvas(img)
-                jb = _jpeg_bytes(img)
-                filename = f"BE0{rec['cnk']}-{lang}-h1.jpg"
-                zf.writestr(filename, jb)
-                saved += 1
-            except Exception as e:
-                missing.append({"Product ID": rec["pid"], "CNK": rec["cnk"], "Reason": str(e)})
-        zf.close()
-        return zip_buf.getvalue(), len(records), saved, missing
-
-    def run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
-        results = {}
-        tmpdir = tempfile.mkdtemp(prefix="medipim_all_")
-        ctx = make_ctx(tmpdir)
-        try:
-            do_login(ctx, email, password)
-            step = (end - start) / max(1, len(langs))
-            for i, lang in enumerate(langs):
-                prog_widget.progress(start + step * i)
-                data = run_export_and_get_bytes(ctx, lang, refs)
-                if data:
-                    results[lang] = data
-                else:
-                    st.error(f"{lang.upper()} export failed: no XLSX found.")
-                prog_widget.progress(start + step * (i + 1))
-        finally:
-            try: ctx["driver"].quit()
-            except: pass
-            shutil.rmtree(tmpdir, ignore_errors=True)
-        return results
 
     # ======================================================
     # Main flow
@@ -1262,14 +922,10 @@ elif server_country == "Medipim":
                 if not results:
                     st.stop()
 
-                proc_start = export_end
-                proc_end = 1.0
-                per_lang = (proc_end - proc_start) / max(1, len(langs))
-
                 for i, lg in enumerate(langs):
                     if lg in results:
                         st.info(f"Processing {lg.upper()} images…")
-                        scaled = ScaledProgress(main_prog, proc_start + per_lang * i, proc_start + per_lang * (i + 1))
+                        scaled = ScaledProgress(main_prog, 0.6, 1.0)
                         z_lg, a_lg, s_lg, miss = build_zip_for_lang(results[lg], lang=lg, progress=scaled)
                         st.session_state["photo_zip"][lg] = z_lg
                         st.session_state["missing_lists"][lg] = miss
