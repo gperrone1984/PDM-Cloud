@@ -764,8 +764,15 @@ elif server_country == "Medipim":
         st.success(f"Cache cleared. Removed {removed} temp folder(s) and reset state.")
 
     # ======================================================
-    # Selenium driver + helpers
+    # Imports e typing
     # ======================================================
+    import pathlib, io, os, time, json, base64, tempfile, shutil, hashlib, zipfile, re
+    import pandas as pd
+    import requests
+    from PIL import Image, ImageOps, ImageDraw
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from typing import Optional, List, Dict, Tuple
+
     from selenium import webdriver
     from selenium.common.exceptions import TimeoutException, WebDriverException
     from selenium.webdriver.common.by import By
@@ -773,9 +780,9 @@ elif server_country == "Medipim":
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
-    import pathlib
-    from typing import Optional
-
+    # ======================================================
+    # Selenium driver + helpers
+    # ======================================================
     def make_ctx(download_dir: str):
         from selenium.webdriver.chrome.service import Service
         user_dir = os.path.join(tempfile.gettempdir(), f"chrome-user-{os.getpid()}")
@@ -826,6 +833,37 @@ elif server_country == "Medipim":
         except Exception: pass
 
         return {"driver": driver, "wait": wait, "actions": actions, "download_dir": download_dir}
+
+    def handle_cookies(ctx):
+        drv = ctx["driver"]
+        for xp in [
+            "//button[contains(., 'Alles accepteren')]",
+            "//button[contains(., 'Ik ga akkoord')]",
+            "//button[contains(., 'Accepter') or contains(., 'Tout accepter')]",
+            "//button[contains(., 'OK')]",
+            "//button[contains(., 'Accept all') or contains(., 'Accept')]",
+        ]:
+            try:
+                btn = WebDriverWait(drv, 3).until(EC.element_to_be_clickable((By.XPATH, xp)))
+                drv.execute_script("arguments[0].click();", btn)
+                break
+            except Exception:
+                pass
+
+    def do_login(ctx, email_addr: str, pwd: str):
+        drv, wait = ctx["driver"], ctx["wait"]
+        drv.get("https://platform.medipim.be/nl/inloggen")
+        handle_cookies(ctx)
+        try:
+            email_el = wait.until(EC.presence_of_element_located((By.ID, "form0.email")))
+            pwd_el   = wait.until(EC.presence_of_element_located((By.ID, "form0.password")))
+            email_el.clear(); email_el.send_keys(email_addr)
+            pwd_el.clear();   pwd_el.send_keys(pwd)
+            submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SubmitButton")))
+            drv.execute_script("arguments[0].click();", submit)
+            wait.until(EC.invisibility_of_element_located((By.ID, "form0.email")))
+        except TimeoutException:
+            pass
 
     def wait_for_xlsx_on_disk(ctx, start_time: float, timeout=60) -> Optional[pathlib.Path]:
         download_dir = ctx["download_dir"]
@@ -885,13 +923,144 @@ elif server_country == "Medipim":
         return None
 
     # ======================================================
-    # Qui continuano: handle_cookies, ensure_language, open_export_dropdown,
-    # click_excel_option, select_all_attributes, run_export_and_get_bytes,
-    # do_login, parse_skus, _extract_id_cnk, _extract_photos,
-    # _download_many, _process_many, build_zip_for_lang,
-    # run_exports_with_progress_single_session,
-    # con tutte le type hints cambiate in Optional[...].
+    # SKU parsing
     # ======================================================
+    def _normalize_sku(raw: str) -> Optional[str]:
+        if not raw:
+            return None
+        digits = re.sub(r"\D", "", raw)
+        if not digits:
+            return None
+        return digits.lstrip("0") or digits
+
+    def parse_skus(sku_text: str, uploaded_file) -> List[str]:
+        skus: List[str] = []
+        if sku_text:
+            raw = sku_text.replace(",", " ").split()
+            skus.extend([x.strip() for x in raw if x.strip()])
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.name.lower().endswith(".csv"):
+                    df = pd.read_csv(uploaded_file, dtype=str, sep=None, engine="python")
+                else:
+                    df = pd.read_excel(uploaded_file, engine="openpyxl")
+                df.columns = [c.lower().strip() for c in df.columns]
+                if "sku" in df.columns:
+                    ex_skus = df["sku"].astype(str).map(lambda x: x.strip()).tolist()
+                    skus.extend([x for x in ex_skus if x])
+                else:
+                    st.error("No 'sku' column found in uploaded file.")
+            except Exception as e:
+                st.error(f"Failed to read uploaded file: {e}")
+        seen, out = set(), []
+        for s in skus:
+            norm = _normalize_sku(s)
+            if norm and norm not in seen:
+                seen.add(norm)
+                out.append(norm)
+        return out
+
+    # ======================================================
+    # Processing immagini (download + zip)
+    # ======================================================
+    class ScaledProgress:
+        def __init__(self, widget, start: float, end: float):
+            self.widget = widget
+            self.start = float(start)
+            self.end = float(end)
+        def progress(self, frac: float):
+            frac = max(0.0, min(1.0, float(frac)))
+            val = self.start + (self.end - self.start) * frac
+            self.widget.progress(min(1.0, max(0.0, val)))
+
+    def _to_1000_canvas(img: Image.Image) -> Image.Image:
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        elif img.mode == "L":
+            img = img.convert("RGB")
+        img = ImageOps.contain(img, (1000, 1000))
+        canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
+        x = (1000 - img.width) // 2
+        y = (1000 - img.height) // 2
+        canvas.paste(img, (x, y))
+        draw = ImageDraw.Draw(canvas)
+        draw.rectangle([(940, 940), (999, 999)], fill=(255, 255, 255))
+        return canvas
+
+    def _jpeg_bytes(img: Image.Image) -> bytes:
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        return buf.getvalue()
+
+    def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress) -> Tuple[bytes, int, int, List[Dict[str, str]]]:
+        xl = pd.ExcelFile(io.BytesIO(xlsx_bytes))
+        products = xl.parse(xl.sheet_names[0])
+        try:
+            photos = xl.parse("Photos")
+        except Exception:
+            photos = xl.parse(xl.sheet_names[1]) if len(xl.sheet_names) > 1 else pd.DataFrame()
+
+        cols_lower = {c.lower(): c for c in products.columns}
+        id_col = cols_lower.get("id") or list(products.columns)[0]
+        cnk_col = cols_lower.get("cnk") or cols_lower.get("cnk code") or list(products.columns)[1]
+        id_cnk = products[[id_col, cnk_col]].rename(columns={id_col: "ID", cnk_col: "CNK"})
+
+        photo_cols = {c.lower(): c for c in photos.columns}
+        pid_col = photo_cols.get("product id") or list(photos.columns)[0]
+        url_col = photo_cols.get("900x900") or list(photos.columns)[1]
+        photos = photos[[pid_col, url_col]].rename(columns={pid_col: "Product ID", url_col: "URL"})
+
+        id2cnk = {str(r["ID"]).strip(): str(r["CNK"]).strip() for _, r in id_cnk.iterrows()}
+
+        records = []
+        for _, r in photos.iterrows():
+            pid = str(r["Product ID"]).strip()
+            url = str(r["URL"]).strip()
+            cnk = id2cnk.get(pid)
+            records.append({"pid": pid, "cnk": cnk, "url": url})
+
+        zip_buf = io.BytesIO()
+        zf = zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED)
+
+        saved, missing = 0, []
+        for rec in records:
+            if not rec["cnk"]:
+                missing.append({"Product ID": rec["pid"], "Reason": "No CNK"})
+                continue
+            try:
+                r = requests.get(rec["url"], timeout=15)
+                r.raise_for_status()
+                img = Image.open(io.BytesIO(r.content))
+                img = _to_1000_canvas(img)
+                jb = _jpeg_bytes(img)
+                filename = f"BE0{rec['cnk']}-{lang}-h1.jpg"
+                zf.writestr(filename, jb)
+                saved += 1
+            except Exception as e:
+                missing.append({"Product ID": rec["pid"], "CNK": rec["cnk"], "Reason": str(e)})
+        zf.close()
+        return zip_buf.getvalue(), len(records), saved, missing
+
+    def run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
+        results = {}
+        tmpdir = tempfile.mkdtemp(prefix="medipim_all_")
+        ctx = make_ctx(tmpdir)
+        try:
+            do_login(ctx, email, password)
+            step = (end - start) / max(1, len(langs))
+            for i, lang in enumerate(langs):
+                prog_widget.progress(start + step * i)
+                data = run_export_and_get_bytes(ctx, lang, refs)
+                if data:
+                    results[lang] = data
+                else:
+                    st.error(f"{lang.upper()} export failed: no XLSX found.")
+                prog_widget.progress(start + step * (i + 1))
+        finally:
+            try: ctx["driver"].quit()
+            except: pass
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        return results
 
     # ======================================================
     # Main flow
@@ -993,4 +1162,3 @@ elif server_country == "Medipim":
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="miss_xlsx_medipim",
                 )
-
