@@ -10,31 +10,13 @@ import tempfile
 import uuid
 import asyncio
 import aiohttp
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET # Usiamo la libreria standard
 import requests
 from zeep import Client, Settings
 from zeep.wsse.username import UsernameToken
 from zeep.transports import Transport
 from zeep.cache import InMemoryCache
 from zeep.plugins import HistoryPlugin
-
-# Medipim specific imports
-import io
-import time
-import json
-import base64
-import pathlib
-import hashlib
-from typing import Dict, List, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import re
-
-from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 # Configurazione pagina (DEVE essere la prima operazione)
 st.set_page_config(
@@ -47,7 +29,9 @@ st.set_page_config(
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# CSS Globale
+# Contenuto della pagina
+# --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
+# *** CSS CON CORREZIONI PER TITOLO/SOTTOTITOLO SIDEBAR ***
 st.markdown(
     """
     <style>
@@ -62,15 +46,15 @@ st.markdown(
         display: none;
     }
 
-    /* Sfondo per l'INTERA AREA PRINCIPALE */
+    /* Sfondo per l'INTERA AREA PRINCIPALE - NUOVO COLORE FORZATO */
     section.main {
-        background-color: #d8dfe6 !important;
+        background-color: #d8dfe6 !important; /* NUOVO COLORE */
     }
     /* Rendi trasparente il contenitore interno e mantieni il padding */
     div[data-testid="stAppViewContainer"] > section > div.block-container {
          background-color: transparent !important;
-         padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0 !important;
+         padding: 2rem 1rem 1rem 1rem !important; /* Padding per contenuto */
+         border-radius: 0 !important; /* Nessun bordo arrotondato interno */
     }
     .main .block-container {
          background-color: transparent !important;
@@ -78,7 +62,8 @@ st.markdown(
          border-radius: 0 !important;
     }
 
-    /* Stile base per i bottoni/placeholder delle app */
+
+    /* Stile base per i bottoni/placeholder delle app (dall'hub) */
     .app-container {
         display: flex;
         flex-direction: column;
@@ -103,8 +88,16 @@ st.markdown(
         transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
         color: #343a40;
     }
+     .app-button-link svg, .app-button-placeholder svg,
+     .app-button-link .icon, .app-button-placeholder .icon {
+         margin-right: 0.6rem;
+         flex-shrink: 0;
+     }
+    .app-button-link > div[data-testid="stText"] > span:before {
+        content: "" !important; margin-right: 0 !important;
+    }
 
-    /* Colore UNICO per entrambi i bottoni cliccabili */
+    /* Colore UNICO per entrambi i bottoni cliccabili (dall'hub) */
     .app-button-link {
         background-color: #f5faff;
         border: 1px solid #c4daee;
@@ -116,7 +109,7 @@ st.markdown(
         cursor: pointer;
     }
 
-    /* Stile Placeholder Coming Soon */
+    /* Stile Placeholder Coming Soon (non cliccabile) (dall'hub) */
     .app-button-placeholder {
         background-color: #f1f3f5;
         opacity: 0.7;
@@ -125,8 +118,12 @@ st.markdown(
         color: #868e96;
         border: 1px dashed #cccccc;
     }
+     .app-button-placeholder .icon {
+         font-size: 1.5em;
+     }
 
-    /* Stile per descrizione sotto i bottoni */
+
+    /* Stile per descrizione sotto i bottoni (dall'hub) */
      .app-description {
         font-size: 0.9em;
         color: #343a40;
@@ -136,23 +133,24 @@ st.markdown(
         margin: 0 auto;
      }
 
-     /* Stili specifici sidebar */
+     /* Stili specifici di QUESTA app (Renaming) */
+     /* --- CORREZIONE: Aggiunto !important per forzare gli stili --- */
      .sidebar-title {
-         font-size: 36px !important;
-         font-weight: bold !important;
-         color: #2c3e50;
+         font-size: 36px !important;      /* Forza dimensione */
+         font-weight: bold !important;   /* Forza grassetto */
+         color: #2c3e50;                 /* Mantiene colore specifico (potrebbe non adattarsi al tema dark) */
          margin-bottom: 0px;
      }
      .sidebar-subtitle {
-         font-size: 18px !important;
-         font-weight: bold !important;
-         color: #2c3e50;
+         font-size: 18px !important;      /* Forza dimensione */
+         font-weight: bold !important;   /* Forza grassetto via CSS */
+         color: #2c3e50;                 /* Mantiene colore specifico */
          margin-top: 10px;
          margin-bottom: 5px;
      }
      .sidebar-desc {
          font-size: 16px;
-         color: #2c3e50;
+         color: #2c3e50;                 /* Mantiene colore specifico */
          margin-top: 5px;
          margin-bottom: 20px;
      }
@@ -171,20 +169,26 @@ st.markdown(
          margin-bottom: 5px;
      }
      [data-testid="stSidebar"] > div:first-child {
-          background-color: #ecf0f1 !important;
+          background-color: #ecf0f1 !important; /* Usa !important per sovrascrivere stile base sidebar */
           padding: 10px !important;
      }
+
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# Bottone per tornare all'Hub nella Sidebar
+# --- Bottone per tornare all'Hub nella Sidebar ---
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
-st.sidebar.markdown("---")
+st.sidebar.markdown("---") # Separatore opzionale
 
-# Sidebar Content
+# ----- LOGIN RIMOSSO -----
+
+# ----- Sidebar Content -----
+# Usa la classe CSS '.sidebar-title' definita sopra
 st.sidebar.markdown("<div class='sidebar-title'>PDM Image Download and Renaming App</div>", unsafe_allow_html=True)
+# Usa la classe CSS '.sidebar-subtitle'. Il grassetto è ora applicato via CSS.
+# Rimosso '**' dal testo.
 st.sidebar.markdown("<div class='sidebar-subtitle'>What This App Does</div>", unsafe_allow_html=True)
 st.sidebar.markdown("""
 <div class='sidebar-desc'>
@@ -196,22 +200,15 @@ st.sidebar.markdown("""
 st.sidebar.markdown("<div class='server-select-label'>Select Server Image</div>", unsafe_allow_html=True)
 server_country = st.sidebar.selectbox("", options=["Switzerland", "Farmadati", "Medipim"], index=0, key="server_select_renaming")
 
-# Session State
+# ----- Session State (Originale) -----
 if "renaming_uploader_key" not in st.session_state:
     st.session_state.renaming_uploader_key = str(uuid.uuid4())
 if "renaming_session_id" not in st.session_state:
      st.session_state.renaming_session_id = str(uuid.uuid4())
 
-# Medipim Session State
-if "medipim_exports" not in st.session_state:
-    st.session_state["medipim_exports"] = {}
-if "medipim_photo_zip" not in st.session_state:
-    st.session_state["medipim_photo_zip"] = {}
-if "medipim_missing_lists" not in st.session_state:
-    st.session_state["medipim_missing_lists"] = {}
-
-# Function to combine SKUs from file and manual input
+# Function to combine SKUs from file and manual input (Originale)
 def get_sku_list(uploaded_file_obj, manual_text):
+    # ... (codice funzione invariato) ...
     sku_list = []
     df_file = None
     if uploaded_file_obj is not None:
@@ -220,12 +217,12 @@ def get_sku_list(uploaded_file_obj, manual_text):
                 uploaded_file_obj.seek(0)
                 sample = uploaded_file_obj.read(1024).decode("utf-8", errors='ignore')
                 uploaded_file_obj.seek(0)
-                delimiter = ';'
+                delimiter = ';' # Default
                 try:
                     dialect = csv.Sniffer().sniff(sample, delimiters=';,\t')
                     delimiter = dialect.delimiter
                 except Exception:
-                    pass
+                    pass # Use default
                 df_file = pd.read_csv(uploaded_file_obj, delimiter=delimiter, dtype=str)
             else:
                 df_file = pd.read_excel(uploaded_file_obj, dtype=str)
@@ -252,10 +249,512 @@ def get_sku_list(uploaded_file_obj, manual_text):
     return unique_sku_list
 
 # ======================================================
-# MEDIPIM FUNCTIONS
+# SECTION: Switzerland
 # ======================================================
+if server_country == "Switzerland":
+    # ... (Codice sezione Svizzera invariato, incluso il bottone Reset) ...
+    st.header("Switzerland Server Image Processing")
+    st.markdown("""
+    :information_source: **How to use:**
 
+    - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
+    - :arrow_right: **In Akeneo, select the following options:**
+        - **File Type:** CSV or Excel
+        - **All Attributes or Grid Context:** (for Grid Context, select ID)
+        - **With Codes**
+        - **Without Media**
+    """)
+
+    # --- Bottone Reset SPOSTATO QUI ---
+    if st.button("🧹 Clear Cache and Reset Data"):
+        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
+        for key in keys_to_remove:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.session_state.renaming_uploader_key = str(uuid.uuid4())
+        st.info("Cache cleared. Please re-upload your file.")
+        # NOTA: time.sleep(1) non può essere usato qui perché 'time' non è importato
+        st.rerun()
+
+    manual_input = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_switzerland")
+    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
+
+    if st.button("Search Images", key="process_switzerland"):
+        st.session_state.renaming_start_processing_ch = True
+        st.session_state.renaming_processing_done_ch = False
+        if "renaming_zip_path_ch" in st.session_state: del st.session_state.renaming_zip_path_ch
+        if "renaming_error_path_ch" in st.session_state: del st.session_state.renaming_error_path_ch
+
+
+    if st.session_state.get("renaming_start_processing_ch") and not st.session_state.get("renaming_processing_done_ch", False):
+        sku_list = get_sku_list(uploaded_file, manual_input)
+        if not sku_list:
+            st.warning("Please upload a file or paste some SKUs to process.")
+            st.session_state.renaming_start_processing_ch = False
+        else:
+            st.info(f"Processing {len(sku_list)} SKUs for Switzerland...")
+            error_codes = []
+            total_count = len(sku_list)
+            progress_bar = st.progress(0, text="Starting processing...")
+
+            def get_image_url(product_code):
+                pharmacode = str(product_code)
+                if pharmacode.upper().startswith("CH"):
+                    pharmacode = pharmacode[2:].lstrip("0")
+                else:
+                    pharmacode = pharmacode.lstrip("0")
+                if not pharmacode: return None
+                return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{pharmacode}/F"
+
+            def process_and_save(original_sku, content, download_folder):
+                try:
+                    img = Image.open(BytesIO(content))
+                    if img.mode != 'L': gray = img.convert("L")
+                    else: gray = img
+                    extrema = gray.getextrema()
+                    if extrema == (0, 0): raise ValueError("Empty image (black)")
+                    if extrema == (255, 255): raise ValueError("Empty image (white)")
+
+                    img = ImageOps.exif_transpose(img)
+                    bg = Image.new(img.mode, img.size, (255, 255, 255))
+                    diff = ImageChops.difference(img, bg)
+                    bbox = diff.getbbox()
+                    if bbox: img = img.crop(bbox)
+
+                    if img.width == 0 or img.height == 0: raise ValueError("Image empty after trim")
+
+                    img.thumbnail((1000, 1000), Image.LANCZOS)
+                    canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
+                    offset_x = (1000 - img.width) // 2
+                    offset_y = (1000 - img.height) // 2
+                    canvas.paste(img, (offset_x, offset_y))
+                    new_filename = f"{original_sku}-h1.jpg"
+                    img_path = os.path.join(download_folder, new_filename)
+                    canvas.save(img_path, "JPEG", quality=95)
+                    return True
+                except Exception as e:
+                    return False
+
+            async def fetch_and_process_image(session, product_code, download_folder):
+                image_url = get_image_url(product_code)
+                if image_url is None:
+                    error_codes.append(product_code)
+                    return
+                try:
+                    async with session.get(image_url, timeout=30) as response:
+                        if response.status == 200:
+                            content = await response.read()
+                            if not content:
+                                error_codes.append(product_code)
+                                return
+                            success = await asyncio.to_thread(process_and_save, product_code, content, download_folder)
+                            if not success:
+                                error_codes.append(product_code)
+                        else:
+                            error_codes.append(product_code)
+                except Exception as e:
+                    error_codes.append(product_code)
+
+            async def run_processing(download_folder):
+                connector = aiohttp.TCPConnector(limit=50)
+                async with aiohttp.ClientSession(connector=connector) as session:
+                    tasks = [fetch_and_process_image(session, sku, download_folder) for sku in sku_list]
+                    processed_count = 0
+                    for f in asyncio.as_completed(tasks):
+                        await f
+                        processed_count += 1
+                        progress_bar.progress(processed_count / total_count)
+                progress_bar.progress(1.0)
+
+
+            with st.spinner("Processing images, please wait..."):
+                with tempfile.TemporaryDirectory() as download_folder:
+                    asyncio.run(run_processing(download_folder))
+
+                    zip_path_ch = None
+                    if any(os.scandir(download_folder)):
+                         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip_file:
+                            zip_path_ch = tmp_zip_file.name
+                         shutil.make_archive(zip_path_ch[:-4], 'zip', download_folder)
+                         st.session_state["renaming_zip_path_ch"] = zip_path_ch
+                    else:
+                         st.session_state["renaming_zip_path_ch"] = None
+
+
+                    error_path_ch = None
+                    if error_codes:
+                        error_df = pd.DataFrame(sorted(list(set(error_codes))), columns=["sku"])
+                        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", newline="", encoding="utf-8-sig") as tmp_error_file:
+                            error_df.to_csv(tmp_error_file, index=False, sep=';')
+                            error_path_ch = tmp_error_file.name
+                        st.session_state["renaming_error_path_ch"] = error_path_ch
+                    else:
+                        st.session_state["renaming_error_path_ch"] = None
+
+            st.session_state["renaming_processing_done_ch"] = True
+            st.session_state.renaming_start_processing_ch = False
+
+
+    if st.session_state.get("renaming_processing_done_ch", False):
+        # ... (codice download Svizzera invariato) ...
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            zip_path_dl = st.session_state.get("renaming_zip_path_ch")
+            if zip_path_dl and os.path.exists(zip_path_dl):
+                with open(zip_path_dl, "rb") as f:
+                    st.download_button(
+                        label="Download Images",
+                        data=f,
+                        file_name=f"switzerland_images_{st.session_state.renaming_session_id[:6]}.zip",
+                        mime="application/zip",
+                        key="dl_ch_zip"
+                    )
+            else:
+                 st.info("No images processed.")
+        with col2:
+            error_path_dl = st.session_state.get("renaming_error_path_ch")
+            if error_path_dl and os.path.exists(error_path_dl):
+                with open(error_path_dl, "rb") as f_error:
+                    st.download_button(
+                        label="Download Missing Image List",
+                        data=f_error,
+                        file_name=f"errors_switzerland_{st.session_state.renaming_session_id[:6]}.csv",
+                        mime="text/csv",
+                        key="dl_ch_err"
+                    )
+            else:
+                st.info("No errors found.")
+
+
+# ======================================================
+# SECTION: Farmadati
+# ======================================================
+elif server_country == "Farmadati":
+    st.header("Farmadati Server Image Processing")
+    st.markdown("""
+    :information_source: **How to use:**
+
+    - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
+    - :arrow_right: **In Akeneo, select the following options:**
+        - **File Type:** CSV or Excel
+        - **All Attributes or Grid Context:** (for Grid Context, select ID)
+        - **With Codes**
+        - **Without Media**
+    """)
+
+    # --- Reset Button ---
+    if st.button("🧹 Clear Cache and Reset Data"):
+        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
+        if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
+            get_farmadati_mapping.clear()
+        for key in keys_to_remove:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.session_state.renaming_uploader_key = str(uuid.uuid4())
+        st.info("Cache cleared. Please re-upload your file.")
+        st.rerun()
+
+    manual_input_fd = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_farmadati")
+    farmadati_file = st.file_uploader("Upload file (column 'sku')", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
+
+    if st.button("Search Images", key="process_farmadati"):
+        st.session_state.renaming_start_processing_fd = True
+        st.session_state.renaming_processing_done_fd = False
+        if "renaming_zip_buffer_fd" in st.session_state: del st.session_state.renaming_zip_buffer_fd
+        if "renaming_error_data_fd" in st.session_state: del st.session_state.renaming_error_data_fd
+
+    if st.session_state.get("renaming_start_processing_fd") and not st.session_state.get("renaming_processing_done_fd", False):
+        sku_list_fd = get_sku_list(farmadati_file, manual_input_fd)
+        if not sku_list_fd:
+            st.warning("Please upload a file or paste some SKUs to process.")
+            st.session_state.renaming_start_processing_fd = False
+        else:
+            st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
+
+            USERNAME = "BDF250621d"
+            PASSWORD = "wTP1tvSZ"
+            WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
+            DATASET_CODE = "TDZ"
+
+            @st.cache_resource(ttl=3600, show_spinner=False)
+            def get_farmadati_mapping(_username, _password):
+                history = HistoryPlugin()
+                transport = Transport(cache=InMemoryCache(), timeout=180)
+                settings = Settings(strict=False, xml_huge_tree=True)
+                try:
+                    client = Client(wsdl=WSDL_URL, wsse=UsernameToken(_username, _password), transport=transport, plugins=[history], settings=settings)
+                    response = client.service.GetDataSet(_username, _password, DATASET_CODE, "GETRECORDS", 1)
+                except Exception as e:
+                    st.error(f"Farmadati Connection/Fetch Error: {e}")
+                    st.stop()
+
+                if response.CodEsito != "OK" or response.ByteListFile is None:
+                    st.error(f"Farmadati API Error: {response.CodEsito} - {response.DescEsito}")
+                    st.stop()
+
+                code_to_image = {}
+                try:
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        zip_path_fd = os.path.join(tmp_dir, f"{DATASET_CODE}.zip")
+                        with open(zip_path_fd, "wb") as f: f.write(response.ByteListFile)
+                        with zipfile.ZipFile(zip_path_fd, 'r') as z:
+                            xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
+                            if not xml_file: raise FileNotFoundError("XML not in ZIP")
+                            z.extract(xml_file, tmp_dir)
+                            xml_full_path = os.path.join(tmp_dir, xml_file)
+
+                        context = ET.iterparse(xml_full_path, events=('end',))
+                        for _, elem in context:
+                            if elem.tag == 'RECORD':
+                                t218 = elem.find('FDI_T218')
+                                t438 = elem.find('FDI_T438')
+                                if t218 is not None and t438 is not None and t218.text and t438.text:
+                                    aic = t218.text.strip().lstrip("0")
+                                    if aic: code_to_image[aic] = t438.text.strip()
+                                elem.clear()
+                    return code_to_image
+                except Exception as e:
+                    st.error(f"Error parsing Farmadati XML: {e}")
+                    st.stop()
+
+            def process_image_fd(img_bytes):
+                try:
+                    # Try to open image with PIL (handles most formats)
+                    try:
+                        img = Image.open(BytesIO(img_bytes))
+                    except UnidentifiedImageError:
+                        # If PIL fails, try to handle ASPX response which might be HTML
+                        content_str = img_bytes.decode('utf-8', errors='ignore')
+                        if "System.Web.HttpException" in content_str or "ASP.NET" in content_str:
+                            raise ValueError("ASPX error page received instead of image")
+                        else:
+                            raise ValueError("Unknown image format")
+                    
+                    # Convert to RGB if needed (for JPEG compatibility)
+                    if img.mode not in ('RGB', 'L'):
+                        img = img.convert('RGB')
+                    
+                    # Check for empty/blank images
+                    if img.mode == 'L':
+                        extrema = img.getextrema()
+                    else:
+                        gray = img.convert('L')
+                        extrema = gray.getextrema()
+                    
+                    if extrema == (0, 0) or extrema == (255, 255):
+                        raise ValueError("Empty/blank image")
+                    
+                    # Auto-rotate based on EXIF
+                    img = ImageOps.exif_transpose(img)
+                    
+                    # Trim whitespace
+                    bg = Image.new(img.mode, img.size, (255, 255, 255))
+                    diff = ImageChops.difference(img, bg)
+                    bbox = diff.getbbox()
+                    if bbox: 
+                        img = img.crop(bbox)
+                    
+                    # Skip if image is empty after trimming
+                    if img.width == 0 or img.height == 0:
+                        raise ValueError("Empty image after trimming")
+                    
+                    # Resize with aspect ratio preservation
+                    img.thumbnail((1000, 1000), Image.LANCZOS)
+                    
+                    # Create white canvas and center the image
+                    canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
+                    offset = ((1000 - img.width) // 2, (1000 - img.height) // 2)
+                    canvas.paste(img, offset)
+                    
+                    # Save to buffer
+                    buffer = BytesIO()
+                    canvas.save(buffer, "JPEG", quality=95)
+                    buffer.seek(0)
+                    return buffer
+                except Exception as e:
+                    raise RuntimeError(f"Image processing failed: {str(e)}")
+
+            try:
+                with st.spinner("Loading Farmadati mapping (this may take a minute)..."):
+                    aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
+
+                if not aic_to_image:
+                    st.error("Farmadati mapping failed.")
+                    st.session_state.renaming_start_processing_fd = False
+                else:
+                    total_fd = len(sku_list_fd)
+                    progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
+                    error_list_fd = []
+                    processed_files_count = 0
+                    zip_buffer = BytesIO()
+
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+                        with requests.Session() as http_session:
+                            for i, sku in enumerate(sku_list_fd):
+                                progress_bar_fd.progress((i+1)/total_fd, text=f"Processing {sku} ({i+1}/{total_fd})")
+                                original_sku = str(sku).strip()
+                                
+                                # Clean and ensure SKU starts with IT
+                                clean_sku = original_sku.upper()
+                                if not clean_sku.startswith("IT"):
+                                    clean_sku = "IT" + clean_sku.lstrip("0")
+                                else:
+                                    clean_sku = "IT" + clean_sku[2:].lstrip("0")
+
+                                if not clean_sku[2:]:  # Check if there's anything after "IT"
+                                    error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
+                                    continue
+
+                                image_name = aic_to_image.get(clean_sku[2:])  # Lookup without "IT" prefix
+                                if not image_name:
+                                    error_list_fd.append((original_sku, "AIC not in mapping"))
+                                    continue
+
+                                image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
+
+                                try:
+                                    response = http_session.get(image_url, timeout=45)
+                                    response.raise_for_status()
+                                    
+                                    # Check content type to detect ASPX errors
+                                    content_type = response.headers.get('Content-Type', '').lower()
+                                    if 'text/html' in content_type or 'text/plain' in content_type:
+                                        if "System.Web.HttpException" in response.text:
+                                            raise ValueError("ASPX error page received")
+                                    
+                                    if not response.content:
+                                        raise ValueError("Empty response")
+                                    
+                                    processed_buffer = process_image_fd(response.content)
+                                    # Ensure filename starts with IT and ends with -h1.jpg
+                                    output_filename = f"{clean_sku}-h1.jpg"
+                                    zipf.writestr(output_filename, processed_buffer.read())
+                                    processed_files_count += 1
+
+                                except requests.exceptions.RequestException as req_e:
+                                    reason = f"Network Error: {req_e}"
+                                    if hasattr(req_e, 'response') and req_e.response is not None:
+                                        reason = f"HTTP {req_e.response.status_code}"
+                                    error_list_fd.append((original_sku, reason))
+                                except Exception as e:
+                                    error_list_fd.append((original_sku, f"Error: {str(e)}"))
+
+                    progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
+
+                    if processed_files_count > 0:
+                        zip_buffer.seek(0)
+                        st.session_state["renaming_zip_buffer_fd"] = zip_buffer
+                    else:
+                        st.session_state["renaming_zip_buffer_fd"] = None
+
+                    if error_list_fd:
+                        error_df = pd.DataFrame(error_list_fd, columns=["SKU", "Reason"])
+                        error_df = error_df.drop_duplicates().sort_values(by="SKU")
+                        csv_error = error_df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+                        st.session_state["renaming_error_data_fd"] = csv_error
+                    else:
+                        st.session_state["renaming_error_data_fd"] = None
+
+            except Exception as critical_e:
+                st.error(f"Critical Error during Farmadati processing: {critical_e}")
+
+            st.session_state["renaming_processing_done_fd"] = True
+            st.session_state.renaming_start_processing_fd = False
+
+    if st.session_state.get("renaming_processing_done_fd"):
+        st.markdown("---")
+        col1_fd_dl, col2_fd_dl = st.columns(2)
+        with col1_fd_dl:
+            zip_data = st.session_state.get("renaming_zip_buffer_fd")
+            if zip_data:
+                st.download_button(
+                    "Download Images (ZIP)",
+                    data=zip_data,
+                    file_name=f"farmadati_images_{st.session_state.renaming_session_id[:6]}.zip",
+                    mime="application/zip",
+                    key="dl_fd_zip"
+                )
+            else:
+                st.info("No images processed.")
+        with col2_fd_dl:
+            error_data = st.session_state.get("renaming_error_data_fd")
+            if error_data:
+                st.download_button(
+                    "Download Error List",
+                    data=error_data,
+                    file_name=f"errors_farmadati_{st.session_state.renaming_session_id[:6]}.csv",
+                    mime="text/csv",
+                    key="dl_fd_err"
+                )
+            else:
+                st.info("No errors found.")
+
+
+# ======================================================
+# SECTION: Medipim
+# ======================================================
+elif server_country == "Medipim":
+    st.header("Medipim: Export and Download Photos (NL/FR)")
+    # --- incolla qui tutto il codice della tua app Medipim ---
+st.title("Medipim: Login → Export → Download Photos (NL/FR)")
+
+# ---------------- Session state ----------------
+if "exports" not in st.session_state:
+    st.session_state["exports"] = {}
+if "photo_zip" not in st.session_state:
+    st.session_state["photo_zip"] = {}
+if "missing_lists" not in st.session_state:
+    st.session_state["missing_lists"] = {}
+
+# ===============================
+# UI — Login & SKUs
+# ===============================
+with st.form("login_form", clear_on_submit=False):
+    st.subheader("Login")
+    email = st.text_input("Email", value="", autocomplete="username")
+    password = st.text_input("Password", value="", type="password", autocomplete="current-password")
+
+    st.subheader("SKU input")
+    sku_text = st.text_area(
+        "Paste SKUs (separated by spaces, commas, or newlines)",
+        height=120,
+        placeholder="e.g. 4811337 4811352\n4811329, 4811345",
+    )
+    uploaded_skus = st.file_uploader("Or upload an Excel with a 'sku' column (optional)", type=["xlsx"], key="xls_skus")
+
+    st.subheader("Images to download")
+    scope = st.radio("Select images", ["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
+
+    submitted = st.form_submit_button("Download photos")
+
+# Clear cache & data button
+clear_clicked = st.button("Clear cache and data", help="Delete temporary files and reset the app state")
+if clear_clicked:
+    for k in ("exports", "photo_zip", "missing_lists"):
+        st.session_state[k] = {}
+    removed = 0
+    tmp_root = tempfile.gettempdir()
+    for name in os.listdir(tmp_root):
+        if name.startswith(("medipim_", "chrome-user-")):
+            try:
+                shutil.rmtree(os.path.join(tmp_root, name), ignore_errors=True)
+                removed += 1
+            except Exception:
+                pass
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+    try:
+        st.cache_resource.clear()
+    except Exception:
+        pass
+    st.success(f"Cache cleared. Removed {removed} temp folder(s) and reset state.")
+
+# ===============================
 # Selenium driver + helpers
+# ===============================
 def make_ctx(download_dir: str):
     from selenium.webdriver.chrome.service import Service
     user_dir = os.path.join(tempfile.gettempdir(), f"chrome-user-{os.getpid()}")
@@ -300,14 +799,10 @@ def make_ctx(download_dir: str):
     wait = WebDriverWait(driver, 40)
     actions = ActionChains(driver)
 
-    try: 
-        driver.execute_cdp_cmd("Network.enable", {})
-    except Exception: 
-        pass
-    try: 
-        driver.execute_cdp_cmd("Page.setDownloadBehavior", {"behavior": "allow", "downloadPath": download_dir})
-    except Exception: 
-        pass
+    try: driver.execute_cdp_cmd("Network.enable", {})
+    except Exception: pass
+    try: driver.execute_cdp_cmd("Page.setDownloadBehavior", {"behavior": "allow", "downloadPath": download_dir})
+    except Exception: pass
 
     return {"driver": driver, "wait": wait, "actions": actions, "download_dir": download_dir}
 
@@ -327,7 +822,7 @@ def handle_cookies(ctx):
         except Exception:
             pass
 
-def ensure_language(ctx, lang: str):
+def ensure_language(ctx, lang: str):  # 'nl' or 'fr'
     drv, wait = ctx["driver"], ctx["wait"]
     base = f"https://platform.medipim.be/{'nl/home' if lang=='nl' else 'fr/home'}"
     drv.get(base)
@@ -514,16 +1009,22 @@ def do_login(ctx, email_addr: str, pwd: str):
     except TimeoutException:
         pass
 
-# SKU parsing functions
+# ===============================
+# SKU parsing (normalizzata)
+# ===============================
 def _normalize_sku(raw: str) -> Optional[str]:
+    """
+    Rimuove tutto ciò che non è cifra e toglie gli zeri iniziali.
+    'BE03678976' -> '3678976'; '0004811337' -> '4811337'
+    """
     if not raw:
         return None
     digits = re.sub(r"\D", "", raw)
     if not digits:
         return None
-    return digits.lstrip("0") or digits
+    return digits.lstrip("0") or digits  # se tutto zero, torna "0"
 
-def parse_skus_medipim(sku_text: str, uploaded_file) -> List[str]:
+def parse_skus(sku_text: str, uploaded_file) -> List[str]:
     skus: List[str] = []
     if sku_text:
         raw = sku_text.replace(",", " ").split()
@@ -537,7 +1038,7 @@ def parse_skus_medipim(sku_text: str, uploaded_file) -> List[str]:
                 skus.extend([x for x in ex_skus if x])
         except Exception as e:
             st.error(f"Failed to read uploaded Excel: {e}")
-    
+    # normalizza + dedup
     seen, out = set(), []
     for s in skus:
         norm = _normalize_sku(s)
@@ -546,8 +1047,10 @@ def parse_skus_medipim(sku_text: str, uploaded_file) -> List[str]:
             out.append(norm)
     return out
 
-# Image processing constants and functions
-DEDUP_DHASH_THRESHOLD = 3
+# ===============================
+# Photo processing — constants
+# ===============================
+DEDUP_DHASH_THRESHOLD = 3  # Hamming distance per dHash (0..64)
 TYPE_RANK = {
     "photo du produit": 1,
     "productfoto": 1,
@@ -557,6 +1060,9 @@ TYPE_RANK = {
     "sfeerbeeld": 3,
 }
 
+# ===============================
+# Helpers: Excel parse
+# ===============================
 def _read_book(xlsx_bytes: bytes) -> Tuple[pd.DataFrame, pd.DataFrame]:
     xl = pd.ExcelFile(io.BytesIO(xlsx_bytes))
     products = xl.parse(xl.sheet_names[0])
@@ -598,8 +1104,12 @@ def _extract_photos(photos_df: pd.DataFrame) -> pd.DataFrame:
     out["Photo ID"] = pd.to_numeric(df[photoid_col], errors="coerce") if photoid_col else None
     return out
 
+# ===============================
+# Image helpers (cached & parallel)
+# ===============================
 @st.cache_data(show_spinner=False, ttl=24*3600, max_entries=10000)
 def _fetch_url_cached(url: str) -> Optional[bytes]:
+    """Scarica e cache-a i bytes dell'immagine per URL (cache 24h)."""
     try:
         r = requests.get(url, timeout=15)
         if r.status_code != 200 or not r.content:
@@ -609,6 +1119,7 @@ def _fetch_url_cached(url: str) -> Optional[bytes]:
         return None
 
 def _download_many(urls: List[str], progress: Optional[st.progress] = None, max_workers: int = 16) -> Dict[str, Optional[bytes]]:
+    """Scarica in parallelo gli URL, usando la cache per ogni URL."""
     results: Dict[str, Optional[bytes]] = {}
     total = len(urls)
     done = 0
@@ -620,399 +1131,6 @@ def _download_many(urls: List[str], progress: Optional[st.progress] = None, max_
     if total == 0:
         return results
 
-# ======================================================
-# SECTION: Switzerland
-# ======================================================
-if server_country == "Switzerland":
-    st.header("Switzerland Server Image Processing")
-    st.markdown("""
-    :information_source: **How to use:**
-
-    - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
-    - :arrow_right: **In Akeneo, select the following options:**
-        - **File Type:** CSV or Excel
-        - **All Attributes or Grid Context:** (for Grid Context, select ID)
-        - **With Codes**
-        - **Without Media**
-    """)
-
-    if st.button("🧹 Clear Cache and Reset Data"):
-        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
-        for key in keys_to_remove:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.session_state.renaming_uploader_key = str(uuid.uuid4())
-        st.info("Cache cleared. Please re-upload your file.")
-        st.rerun()
-
-    manual_input = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_switzerland")
-    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
-
-    if st.button("Search Images", key="process_switzerland"):
-        st.session_state.renaming_start_processing_ch = True
-        st.session_state.renaming_processing_done_ch = False
-        if "renaming_zip_path_ch" in st.session_state: del st.session_state.renaming_zip_path_ch
-        if "renaming_error_path_ch" in st.session_state: del st.session_state.renaming_error_path_ch
-
-    if st.session_state.get("renaming_start_processing_ch") and not st.session_state.get("renaming_processing_done_ch", False):
-        sku_list = get_sku_list(uploaded_file, manual_input)
-        if not sku_list:
-            st.warning("Please upload a file or paste some SKUs to process.")
-            st.session_state.renaming_start_processing_ch = False
-        else:
-            st.info(f"Processing {len(sku_list)} SKUs for Switzerland...")
-            error_codes = []
-            total_count = len(sku_list)
-            progress_bar = st.progress(0, text="Starting processing...")
-
-            def get_image_url(product_code):
-                pharmacode = str(product_code)
-                if pharmacode.upper().startswith("CH"):
-                    pharmacode = pharmacode[2:].lstrip("0")
-                else:
-                    pharmacode = pharmacode.lstrip("0")
-                if not pharmacode: return None
-                return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{pharmacode}/F"
-
-            def process_and_save(original_sku, content, download_folder):
-                try:
-                    img = Image.open(BytesIO(content))
-                    if img.mode != 'L': gray = img.convert("L")
-                    else: gray = img
-                    extrema = gray.getextrema()
-                    if extrema == (0, 0): raise ValueError("Empty image (black)")
-                    if extrema == (255, 255): raise ValueError("Empty image (white)")
-
-                    img = ImageOps.exif_transpose(img)
-                    bg = Image.new(img.mode, img.size, (255, 255, 255))
-                    diff = ImageChops.difference(img, bg)
-                    bbox = diff.getbbox()
-                    if bbox: img = img.crop(bbox)
-
-                    if img.width == 0 or img.height == 0: raise ValueError("Image empty after trim")
-
-                    img.thumbnail((1000, 1000), Image.LANCZOS)
-                    canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
-                    offset_x = (1000 - img.width) // 2
-                    offset_y = (1000 - img.height) // 2
-                    canvas.paste(img, (offset_x, offset_y))
-                    new_filename = f"{original_sku}-h1.jpg"
-                    img_path = os.path.join(download_folder, new_filename)
-                    canvas.save(img_path, "JPEG", quality=95)
-                    return True
-                except Exception as e:
-                    return False
-
-            async def fetch_and_process_image(session, product_code, download_folder):
-                image_url = get_image_url(product_code)
-                if image_url is None:
-                    error_codes.append(product_code)
-                    return
-                try:
-                    async with session.get(image_url, timeout=30) as response:
-                        if response.status == 200:
-                            content = await response.read()
-                            if not content:
-                                error_codes.append(product_code)
-                                return
-                            success = await asyncio.to_thread(process_and_save, product_code, content, download_folder)
-                            if not success:
-                                error_codes.append(product_code)
-                        else:
-                            error_codes.append(product_code)
-                except Exception as e:
-                    error_codes.append(product_code)
-
-            async def run_processing(download_folder):
-                connector = aiohttp.TCPConnector(limit=50)
-                async with aiohttp.ClientSession(connector=connector) as session:
-                    tasks = [fetch_and_process_image(session, sku, download_folder) for sku in sku_list]
-                    processed_count = 0
-                    for f in asyncio.as_completed(tasks):
-                        await f
-                        processed_count += 1
-                        progress_bar.progress(processed_count / total_count)
-                progress_bar.progress(1.0)
-
-            with st.spinner("Processing images, please wait..."):
-                with tempfile.TemporaryDirectory() as download_folder:
-                    asyncio.run(run_processing(download_folder))
-
-                    zip_path_ch = None
-                    if any(os.scandir(download_folder)):
-                         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip_file:
-                            zip_path_ch = tmp_zip_file.name
-                         shutil.make_archive(zip_path_ch[:-4], 'zip', download_folder)
-                         st.session_state["renaming_zip_path_ch"] = zip_path_ch
-                    else:
-                         st.session_state["renaming_zip_path_ch"] = None
-
-                    error_path_ch = None
-                    if error_codes:
-                        error_df = pd.DataFrame(sorted(list(set(error_codes))), columns=["sku"])
-                        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", newline="", encoding="utf-8-sig") as tmp_error_file:
-                            error_df.to_csv(tmp_error_file, index=False, sep=';')
-                            error_path_ch = tmp_error_file.name
-                        st.session_state["renaming_error_path_ch"] = error_path_ch
-                    else:
-                        st.session_state["renaming_error_path_ch"] = None
-
-            st.session_state["renaming_processing_done_ch"] = True
-            st.session_state.renaming_start_processing_ch = False
-
-    if st.session_state.get("renaming_processing_done_ch", False):
-        st.markdown("---")
-        col1, col2 = st.columns(2)
-        with col1:
-            zip_path_dl = st.session_state.get("renaming_zip_path_ch")
-            if zip_path_dl and os.path.exists(zip_path_dl):
-                with open(zip_path_dl, "rb") as f:
-                    st.download_button(
-                        label="Download Images",
-                        data=f,
-                        file_name=f"switzerland_images_{st.session_state.renaming_session_id[:6]}.zip",
-                        mime="application/zip",
-                        key="dl_ch_zip"
-                    )
-            else:
-                 st.info("No images processed.")
-        with col2:
-            error_path_dl = st.session_state.get("renaming_error_path_ch")
-            if error_path_dl and os.path.exists(error_path_dl):
-                with open(error_path_dl, "rb") as f_error:
-                    st.download_button(
-                        label="Download Missing Image List",
-                        data=f_error,
-                        file_name=f"errors_switzerland_{st.session_state.renaming_session_id[:6]}.csv",
-                        mime="text/csv",
-                        key="dl_ch_err"
-                    )
-            else:
-                st.info("No errors found.")
-
-# ======================================================
-# SECTION: Farmadati
-# ======================================================
-elif server_country == "Farmadati":
-    st.header("Farmadati Server Image Processing")
-    st.markdown("""
-    :information_source: **How to use:**
-
-    - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
-    - :arrow_right: **In Akeneo, select the following options:**
-        - **File Type:** CSV or Excel
-        - **All Attributes or Grid Context:** (for Grid Context, select ID)
-        - **With Codes**
-        - **Without Media**
-    """)
-
-    if st.button("🧹 Clear Cache and Reset Data"):
-        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
-        if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
-            get_farmadati_mapping.clear()
-        for key in keys_to_remove:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.session_state.renaming_uploader_key = str(uuid.uuid4())
-        st.info("Cache cleared. Please re-upload your file.")
-        st.rerun()
-
-    manual_input_fd = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_farmadati")
-    farmadati_file = st.file_uploader("Upload file (column 'sku')", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
-
-    if st.button("Search Images", key="process_farmadati"):
-        st.session_state.renaming_start_processing_fd = True
-        st.session_state.renaming_processing_done_fd = False
-        if "renaming_zip_buffer_fd" in st.session_state: del st.session_state.renaming_zip_buffer_fd
-        if "renaming_error_data_fd" in st.session_state: del st.session_state.renaming_error_data_fd
-
-    if st.session_state.get("renaming_start_processing_fd") and not st.session_state.get("renaming_processing_done_fd", False):
-        sku_list_fd = get_sku_list(farmadati_file, manual_input_fd)
-        if not sku_list_fd:
-            st.warning("Please upload a file or paste some SKUs to process.")
-            st.session_state.renaming_start_processing_fd = False
-        else:
-            st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
-
-            USERNAME = "BDF250621d"
-            PASSWORD = "wTP1tvSZ"
-            WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
-            DATASET_CODE = "TDZ"
-
-            @st.cache_resource(ttl=3600, show_spinner=False)
-            def get_farmadati_mapping(_username, _password):
-                history = HistoryPlugin()
-                transport = Transport(cache=InMemoryCache(), timeout=180)
-                settings = Settings(strict=False, xml_huge_tree=True)
-                try:
-                    client = Client(wsdl=WSDL_URL, wsse=UsernameToken(_username, _password), transport=transport, plugins=[history], settings=settings)
-                    response = client.service.GetDataSet(_username, _password, DATASET_CODE, "GETRECORDS", 1)
-                except Exception as e:
-                    st.error(f"Farmadati Connection/Fetch Error: {e}")
-                    st.stop()
-
-                if response.CodEsito != "OK" or response.ByteListFile is None:
-                    st.error(f"Farmadati API Error: {response.CodEsito} - {response.DescEsito}")
-                    st.stop()
-
-                code_to_image = {}
-                try:
-                    with tempfile.TemporaryDirectory() as tmp_dir:
-                        zip_path_fd = os.path.join(tmp_dir, f"{DATASET_CODE}.zip")
-                        with open(zip_path_fd, "wb") as f: f.write(response.ByteListFile)
-                        with zipfile.ZipFile(zip_path_fd, 'r') as z:
-                            xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
-                            if not xml_file: raise FileNotFoundError("XML not in ZIP")
-                            z.extract(xml_file, tmp_dir)
-                            xml_full_path = os.path.join(tmp_dir, xml_file)
-
-                        context = ET.iterparse(xml_full_path, events=('end',))
-                        for _, elem in context:
-                            if elem.tag == 'RECORD':
-                                t218 = elem.find('FDI_T218')
-                                t438 = elem.find('FDI_T438')
-                                if t218 is not None and t438 is not None and t218.text and t438.text:
-                                    aic = t218.text.strip().lstrip("0")
-                                    if aic: code_to_image[aic] = t438.text.strip()
-                                elem.clear()
-                    return code_to_image
-                except Exception as e:
-                    st.error(f"Error parsing Farmadati XML: {e}")
-                    st.stop()
-
-            def process_image_fd(img_bytes):
-                try:
-                    try:
-                        img = Image.open(BytesIO(img_bytes))
-                    except UnidentifiedImageError:
-                        content_str = img_bytes.decode('utf-8', errors='ignore')
-                        if "System.Web.HttpException" in content_str or "ASP.NET" in content_str:
-                            raise ValueError("ASPX error page received instead of image")
-                        else:
-                            raise ValueError("Unknown image format")
-                    
-                    if img.mode not in ('RGB', 'L'):
-                        img = img.convert('RGB')
-                    
-                    if img.mode == 'L':
-                        extrema = img.getextrema()
-                    else:
-                        gray = img.convert('L')
-                        extrema = gray.getextrema()
-                    
-                    if extrema == (0, 0) or extrema == (255, 255):
-                        raise ValueError("Empty/blank image")
-                    
-                    img = ImageOps.exif_transpose(img)
-                    
-                    bg = Image.new(img.mode, img.size, (255, 255, 255))
-                    diff = ImageChops.difference(img, bg)
-                    bbox = diff.getbbox()
-                    if bbox: 
-                        img = img.crop(bbox)
-                    
-                    if img.width == 0 or img.height == 0:
-                        raise ValueError("Empty image after trimming")
-                    
-                    img.thumbnail((1000, 1000), Image.LANCZOS)
-                    
-                    canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
-                    offset = ((1000 - img.width) // 2, (1000 - img.height) // 2)
-                    canvas.paste(img, offset)
-                    
-                    buffer = BytesIO()
-                    canvas.save(buffer, "JPEG", quality=95)
-                    buffer.seek(0)
-                    return buffer
-                except Exception as e:
-                    raise RuntimeError(f"Image processing failed: {str(e)}")
-
-            try:
-                with st.spinner("Loading Farmadati mapping (this may take a minute)..."):
-                    aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
-
-                if not aic_to_image:
-                    st.error("Farmadati mapping failed.")
-                    st.session_state.renaming_start_processing_fd = False
-                else:
-                    total_fd = len(sku_list_fd)
-                    progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
-                    error_list_fd = []
-                    processed_files_count = 0
-                    zip_buffer = BytesIO()
-
-                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-                        with requests.Session() as http_session:
-                            for i, sku in enumerate(sku_list_fd):
-                                progress_bar_fd.progress((i+1)/total_fd, text=f"Processing {sku} ({i+1}/{total_fd})")
-                                original_sku = str(sku).strip()
-                                
-                                clean_sku = original_sku.upper()
-                                if not clean_sku.startswith("IT"):
-                                    clean_sku = "IT" + clean_sku.lstrip("0")
-                                else:
-                                    clean_sku = "IT" + clean_sku[2:].lstrip("0")
-
-                                if not clean_sku[2:]:
-                                    error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
-                                    continue
-
-                                image_name = aic_to_image.get(clean_sku[2:])
-                                if not image_name:
-                                    error_list_fd.append((original_sku, "AIC not in mapping"))
-                                    continue
-
-                                image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
-
-                                try:
-                                    response = http_session.get(image_url, timeout=45)
-                                    response.raise_for_status()
-                                    
-                                    content_type = response.headers.get('Content-Type', '').lower()
-                                    if 'text/html' in content_type or 'text/plain' in content_type:
-                                        if "System.Web.HttpException" in response.text:
-                                            raise ValueError("ASPX error page received")
-                                    
-                                    if not response.content:
-                                        raise ValueError("Empty response")
-                                    
-                                    processed_buffer = process_image_fd(response.content)
-                                    output_filename = f"{clean_sku}-h1.jpg"
-                                    zipf.writestr(output_filename, processed_buffer.read())
-                                    processed_files_count += 1
-
-                                except requests.exceptions.RequestException as req_e:
-                                    reason = f"Network Error: {req_e}"
-                                    if hasattr(req_e, 'response') and req_e.response is not None:
-                                        reason = f"HTTP {req_e.response.status_code}"
-                                    error_list_fd.append((original_sku, reason))
-                                except Exception as e:
-                                    error_list_fd.append((original_sku, f"Error: {str(e)}"))
-
-                    progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
-
-                    if processed_files_count > 0:
-                        zip_buffer.seek(0)
-                        st.session_state["renaming_zip_buffer_fd"] = zip_buffer
-                    else:
-                        st.session_state["renaming_zip_buffer_fd"] = None
-
-                    if error_list_fd:
-                        error_df = pd.DataFrame(error_list_fd, columns=["SKU", "Reason"])
-                        error_df = error_df.drop_duplicates().sort_values(by="SKU")
-                        csv_error = error_df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-                        st.session_state["renaming_error_data_fd"] = csv_error
-                    else:
-                        st.session_state["renaming_error_data_fd"] = None
-
-            except Exception as critical_e:
-                st.error(f"Critical Error during Farmadati processing: {critical_e}")
-
-            st.session_state["renaming_processing_done_fd"] = True
-            st.session_state.renaming_start_processing_fd = False
-
-    if
-
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = [pool.submit(task, u) for u in urls]
         for f in as_completed(futures):
@@ -1022,7 +1140,7 @@ elif server_country == "Farmadati":
             frac = done / total
             if progress and frac >= next_update:
                 progress.progress(min(1.0, frac))
-                next_update += 0.05
+                next_update += 0.05  # update ogni 5%
 
     if progress:
         progress.progress(1.0)
@@ -1038,6 +1156,8 @@ def _to_1000_canvas(img: Image.Image) -> Image.Image:
     x = (1000 - img.width) // 2
     y = (1000 - img.height) // 2
     canvas.paste(img, (x, y))
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle([(940, 940), (999, 999)], fill=(255, 255, 255))
     return canvas
 
 def _jpeg_bytes(img: Image.Image) -> bytes:
@@ -1046,6 +1166,7 @@ def _jpeg_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 def _dhash(image: Image.Image, hash_size: int = 8) -> int:
+    """Perceptual difference hash (dHash)."""
     img = image.convert("L").resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
     pixels = list(img.getdata())
     w = hash_size + 1
@@ -1068,6 +1189,7 @@ def _hash_bytes(b: bytes) -> str:
     return hashlib.md5(b).hexdigest()
 
 def _process_one(url: str, content: Optional[bytes]) -> Tuple[str, Optional[Tuple[bytes, int, str]]]:
+    """Elabora un'immagine (bytes → canvas 1000 → jpeg → dhash/md5)."""
     if content is None:
         return url, None
     try:
@@ -1082,6 +1204,7 @@ def _process_one(url: str, content: Optional[bytes]) -> Tuple[str, Optional[Tupl
         return url, None
 
 def _process_many(urls: List[str], contents: Dict[str, Optional[bytes]], progress: Optional[st.progress] = None, max_workers: int = 16) -> Dict[str, Optional[Tuple[bytes, int, str]]]:
+    """Elabora in parallelo i contenuti scaricati."""
     results: Dict[str, Optional[Tuple[bytes, int, str]]] = {}
     total = len(urls)
     done = 0
@@ -1105,7 +1228,11 @@ def _process_many(urls: List[str], contents: Dict[str, Optional[bytes]], progres
         progress.progress(1.0)
     return results
 
+# ===============================
+# Build ZIP (parallelo + dedup)
+# ===============================
 class ScaledProgress:
+    """Proxy around una progress bar unica, con finestra [start,end]."""
     def __init__(self, widget, start: float, end: float):
         self.widget = widget
         self.start = float(start)
@@ -1116,6 +1243,14 @@ class ScaledProgress:
         self.widget.progress(min(1.0, max(0.0, val)))
 
 def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress) -> Tuple[bytes, int, int, List[Dict[str, str]]]:
+    """
+    Pipeline:
+      1) Parse/sort
+      2) Download parallelo (cache)
+      3) Processing parallelo (canvas+hash)
+      4) Dedup per CNK
+      5) Scrittura ZIP
+    """
     products_df, photos_df = _read_book(xlsx_bytes)
     id_cnk = _extract_id_cnk(products_df)
     photos_raw = _extract_photos(photos_df)
@@ -1137,6 +1272,7 @@ def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress) -
     photos["rank_photoid"] = pd.to_numeric(photos["Photo ID"], errors="coerce").fillna(10**9).astype(int)
     photos.sort_values(["Product ID", "rank_type", "rank_photoid"], inplace=True)
 
+    # record ordinati
     records = []
     for _, r in photos.iterrows():
         pid = str(r["Product ID"]).strip()
@@ -1144,13 +1280,16 @@ def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress) -
         cnk = id2cnk.get(pid)
         records.append({"pid": pid, "cnk": cnk, "url": url})
 
+    # Download parallelo (0→40%)
     dl_prog = ScaledProgress(progress.widget, progress.start, progress.start + (progress.end - progress.start) * 0.40)
     url_list = [rec["url"] for rec in records]
     url_contents = _download_many(url_list, progress=dl_prog, max_workers=16)
 
+    # Processing parallelo (40→85%)
     pr_prog = ScaledProgress(progress.widget, progress.start + (progress.end - progress.start) * 0.40, progress.start + (progress.end - progress.start) * 0.85)
     processed_map = _process_many(url_list, url_contents, progress=pr_prog, max_workers=16)
 
+    # Dedup + ZIP (85→100%)
     zip_prog = ScaledProgress(progress.widget, progress.start + (progress.end - progress.start) * 0.85, progress.end)
     zip_buf = io.BytesIO()
     zf = zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED)
@@ -1221,6 +1360,7 @@ def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress) -
         if frac >= next_update:
             zip_prog.progress(frac); next_update += 0.05
 
+    # prodotti senza righe "Photos"
     for pid, cnk in id_cnk.values:
         pid = str(pid)
         cnk = str(cnk)
@@ -1231,7 +1371,13 @@ def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress) -
     zip_prog.progress(1.0)
     return zip_buf.getvalue(), attempted, saved, missing
 
+# ===============================
+# Orchestrator — single session for NL/FR
+# ===============================
 def run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
+    """
+    Una sola sessione Chrome: login una volta, poi export per le lingue richieste
+    """
     results = {}
     tmpdir = tempfile.mkdtemp(prefix="medipim_all_")
     ctx = make_ctx(tmpdir)
@@ -1256,3 +1402,113 @@ def run_exports_with_progress_single_session(email: str, password: str, refs: st
         except Exception:
             pass
     return results
+
+# ===============================
+# Main flow
+# ===============================
+if submitted:
+    st.session_state["exports"] = {}
+    st.session_state["photo_zip"] = {}
+    st.session_state["missing_lists"] = {}
+
+    if not email or not password:
+        st.error("Please enter your email and password.")
+    else:
+        skus = parse_skus(sku_text, uploaded_skus)
+        if not skus:
+            st.error("Please provide at least one SKU (textarea or Excel).")
+        else:
+            refs = " ".join(skus)
+            if scope == "NL only":
+                langs = ["nl"]
+            elif scope == "FR only":
+                langs = ["fr"]
+            else:
+                langs = ["nl", "fr"]
+
+            # progress globale
+            main_prog = st.progress(0.0)
+            # Phase 1: exports (0.0 → 0.5 se una lingua, 0.0 → 0.6 se due)
+            export_end = 0.5 if len(langs) == 1 else 0.6
+            results = run_exports_with_progress_single_session(email, password, refs, langs, main_prog, 0.0, export_end)
+            if not results:
+                st.stop()
+
+            # Phase 2: processing per lingua
+            proc_start = export_end
+            proc_end = 1.0
+            per_lang = (proc_end - proc_start) / max(1, len(langs))
+
+            for i, lg in enumerate(langs):
+                if lg in results:
+                    st.info(f"Processing {lg.upper()} images…")
+                    scaled = ScaledProgress(main_prog, proc_start + per_lang * i, proc_start + per_lang * (i + 1))
+                    z_lg, a_lg, s_lg, miss = build_zip_for_lang(results[lg], lang=lg, progress=scaled)
+                    st.session_state["photo_zip"][lg] = z_lg
+                    st.session_state["missing_lists"][lg] = miss
+                    st.success(f"{lg.upper()}: saved {s_lg} images.")
+            main_prog.progress(1.0)
+
+            # merge ZIP se NL+FR
+            if scope == "All (NL + FR)" and ("nl" in st.session_state["photo_zip"] or "fr" in st.session_state["photo_zip"]):
+                combo = io.BytesIO()
+                with zipfile.ZipFile(combo, mode="w", compression=zipfile.ZIP_DEFLATED) as z:
+                    for lg in ("nl", "fr"):
+                        if lg in st.session_state["photo_zip"]:
+                            with zipfile.ZipFile(io.BytesIO(st.session_state["photo_zip"][lg])) as zlg:
+                                for name in zlg.namelist():
+                                    z.writestr(name, zlg.read(name))
+                st.session_state["photo_zip"]["all"] = combo.getvalue()
+
+# ===============================
+# Downloads (ZIP and missing list)
+# ===============================
+if st.session_state["photo_zip"]:
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    base = f"medipim_photos_{ts}"
+
+    st.markdown("### Downloads")
+    if "all" in st.session_state["photo_zip"]:
+        st.download_button(
+            "Download ALL photos (ZIP)",
+            data=io.BytesIO(st.session_state["photo_zip"]["all"]),
+            file_name=f"{base}_ALL.zip",
+            mime="application/zip",
+            key="zip_all",
+        )
+    if "nl" in st.session_state["photo_zip"] and "all" not in st.session_state["photo_zip"]:
+        st.download_button(
+            "Download NL photos (ZIP)",
+            data=io.BytesIO(st.session_state["photo_zip"]["nl"]),
+            file_name=f"{base}_NL.zip",
+            mime="application/zip",
+            key="zip_nl",
+        )
+    if "fr" in st.session_state["photo_zip"] and "all" not in st.session_state["photo_zip"]:
+        st.download_button(
+            "Download FR photos (ZIP)",
+            data=io.BytesIO(st.session_state["photo_zip"]["fr"]),
+            file_name=f"{base}_FR.zip",
+            mime="application/zip",
+            key="zip_fr",
+        )
+
+    if st.session_state["missing_lists"]:
+        miss_all = []
+        for lg, miss in st.session_state["missing_lists"].items():
+            for row in miss:
+                row["Lang"] = lg.upper()
+                miss_all.append(row)
+        if miss_all:
+            miss_df = pd.DataFrame(miss_all)
+            miss_buf = io.BytesIO()
+            with pd.ExcelWriter(miss_buf, engine="openpyxl") as writer:
+                miss_df.to_excel(writer, index=False)
+            st.download_button(
+                "Download missing images list (.xlsx)",
+                data=miss_buf.getvalue(),
+                file_name=f"{base}_MISSING.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="miss_xlsx",
+            )
+
