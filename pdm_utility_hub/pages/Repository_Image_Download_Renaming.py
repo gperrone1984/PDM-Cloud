@@ -80,7 +80,6 @@ st.markdown(
          border-radius: 0 !important;
     }
 
-
     /* Stile base per i bottoni/placeholder delle app (dall'hub) */
     .app-container {
         display: flex;
@@ -140,7 +139,6 @@ st.markdown(
          font-size: 1.5em;
      }
 
-
     /* Stile per descrizione sotto i bottoni (dall'hub) */
      .app-description {
         font-size: 0.9em;
@@ -152,23 +150,22 @@ st.markdown(
      }
 
      /* Stili specifici di QUESTA app (Renaming) */
-     /* --- CORREZIONE: Aggiunto !important per forzare gli stili --- */
      .sidebar-title {
-         font-size: 36px !important;      /* Forza dimensione */
-         font-weight: bold !important;   /* Forza grassetto */
-         color: #2c3e50;                 /* Mantiene colore specifico (potrebbe non adattarsi al tema dark) */
+         font-size: 36px !important;
+         font-weight: bold !important;
+         color: #2c3e50;
          margin-bottom: 0px;
      }
      .sidebar-subtitle {
-         font-size: 18px !important;      /* Forza dimensione */
-         font-weight: bold !important;   /* Forza grassetto via CSS */
-         color: #2c3e50;                 /* Mantiene colore specifico */
+         font-size: 18px !important;
+         font-weight: bold !important;
+         color: #2c3e50;
          margin-top: 10px;
          margin-bottom: 5px;
      }
      .sidebar-desc {
          font-size: 16px;
-         color: #2c3e50;                 /* Mantiene colore specifico */
+         color: #2c3e50;
          margin-top: 5px;
          margin-bottom: 20px;
      }
@@ -187,7 +184,7 @@ st.markdown(
          margin-bottom: 5px;
      }
      [data-testid="stSidebar"] > div:first-child {
-          background-color: #ecf0f1 !important; /* Usa !important per sovrascrivere stile base sidebar */
+          background-color: #ecf0f1 !important;
           padding: 10px !important;
      }
 
@@ -757,16 +754,48 @@ elif server_country == "Medipim":
         st.success(f"Cache cleared. Removed {removed} temp folder(s) and reset state.")
 
     # ===============================
-    # Selenium driver + helpers
+    # Selenium driver + helpers (ROBUSTI)
     # ===============================
+    def _find_chrome_binary_and_driver():
+        """Prova a individuare Chrome/Chromium e chromedriver in vari percorsi."""
+        import shutil as _shutil
+
+        chrome_candidates = [
+            os.environ.get("CHROME_PATH"),
+            _shutil.which("chromium"),
+            _shutil.which("chromium-browser"),
+            _shutil.which("google-chrome"),
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/google-chrome",
+            "/usr/lib/chromium/chromium",
+            "/opt/chrome/chrome",
+        ]
+        chrome_binary = next((p for p in chrome_candidates if p and os.path.exists(p)), None)
+
+        driver_candidates = [
+            os.environ.get("CHROMEDRIVER_PATH"),
+            _shutil.which("chromedriver"),
+            "/usr/bin/chromedriver",
+            "/usr/lib/chromium/chromedriver",
+            "/opt/chromedriver",
+        ]
+        chromedriver = next((p for p in driver_candidates if p and os.path.exists(p)), None)
+
+        return chrome_binary, chromedriver
+
     def make_ctx(download_dir: str):
+        """Crea un contesto Selenium robusto (headless new → headless classico; Service esplicito se driver presente)."""
         from selenium.webdriver.chrome.service import Service
+
+        os.makedirs(download_dir, exist_ok=True)
         user_dir = os.path.join(tempfile.gettempdir(), f"chrome-user-{os.getpid()}")
         os.makedirs(user_dir, exist_ok=True)
 
-        def build_options():
+        def build_options(headless_arg="--headless=new"):
             opt = webdriver.ChromeOptions()
-            opt.add_argument("--headless=new")
+            if headless_arg:
+                opt.add_argument(headless_arg)
             opt.add_argument("--no-sandbox")
             opt.add_argument("--disable-dev-shm-usage")
             opt.add_argument("--disable-gpu")
@@ -775,7 +804,7 @@ elif server_country == "Medipim":
             opt.add_argument("--remote-debugging-port=0")
             opt.add_argument(f"--user-data-dir={user_dir}")
             opt.add_experimental_option("prefs", {
-                "download.default_directory": download_dir,
+                "download.default_directory": os.path.abspath(download_dir),
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
                 "download_restrictions": 0,
@@ -783,32 +812,56 @@ elif server_country == "Medipim":
                 "safebrowsing.disable_download_protection": True,
                 "profile.default_content_setting_values.automatic_downloads": 1,
             })
-            opt.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
+            try:
+                opt.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
+            except Exception:
+                pass
             return opt
 
-        opt = build_options()
+        chrome_binary, chromedriver = _find_chrome_binary_and_driver()
+
+        # Prova 1: headless new
+        opt = build_options("--headless=new")
+        if chrome_binary:
+            opt.binary_location = chrome_binary
         try:
-            driver = webdriver.Chrome(options=opt)
-        except WebDriverException as e_a:
-            chromebin = "/usr/bin/chromium"
-            chromedrv = "/usr/bin/chromedriver"
-            if os.path.exists(chromebin) and os.path.exists(chromedrv):
-                opt = build_options()
-                opt.binary_location = chromebin
-                service = Service(chromedrv)
+            if chromedriver:
+                service = Service(chromedriver)
                 driver = webdriver.Chrome(service=service, options=opt)
             else:
-                raise WebDriverException(f"Chrome failed to start: {e_a}") from e_a
+                driver = webdriver.Chrome(options=opt)
+        except WebDriverException as e_first:
+            # Prova 2: headless classico
+            opt = build_options("--headless")
+            if chrome_binary:
+                opt.binary_location = chrome_binary
+            try:
+                if chromedriver:
+                    service = Service(chromedriver)
+                    driver = webdriver.Chrome(service=service, options=opt)
+                else:
+                    driver = webdriver.Chrome(options=opt)
+            except WebDriverException as e_second:
+                msg = (
+                    "Chrome failed to start.\n\n"
+                    f"- chrome_binary: {chrome_binary!r}\n"
+                    f"- chromedriver:  {chromedriver!r}\n"
+                    f"- first error:   {e_first}\n"
+                    f"- second error:  {e_second}\n\n"
+                    "Controlla che in packages.txt ci siano 'chromium' e 'chromium-driver' e che i percorsi sopra esistano."
+                )
+                raise WebDriverException(msg) from e_second
 
         wait = WebDriverWait(driver, 40)
         actions = ActionChains(driver)
 
+        # Abilita CDP per download ed eventi rete
         try:
             driver.execute_cdp_cmd("Network.enable", {})
         except Exception:
             pass
         try:
-            driver.execute_cdp_cmd("Page.setDownloadBehavior", {"behavior": "allow", "downloadPath": download_dir})
+            driver.execute_cdp_cmd("Page.setDownloadBehavior", {"behavior": "allow", "downloadPath": os.path.abspath(download_dir)})
         except Exception:
             pass
 
@@ -1027,7 +1080,7 @@ elif server_country == "Medipim":
         """
         if not raw:
             return None
-        digits = re.sub(r"\\D", "", raw)
+        digits = re.sub(r"\D", "", raw)
         if not digits:
             return None
         return digits.lstrip("0") or digits  # se tutto zero, torna "0"
@@ -1173,9 +1226,15 @@ elif server_country == "Medipim":
         img.save(buf, format="JPEG", quality=85, optimize=True)
         return buf.getvalue()
 
+    # Compat LANCZOS
+    try:
+        _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS  # PIL >= 9.1
+    except Exception:
+        _RESAMPLE_LANCZOS = Image.LANCZOS
+
     def _dhash(image: Image.Image, hash_size: int = 8) -> int:
         """Perceptual difference hash (dHash)."""
-        img = image.convert("L").resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
+        img = image.convert("L").resize((hash_size + 1, hash_size), _RESAMPLE_LANCZOS)
         pixels = list(img.getdata())
         w = hash_size + 1
         bits = []
@@ -1379,7 +1438,7 @@ elif server_country == "Medipim":
         return zip_buf.getvalue(), attempted, saved, missing
 
     # ===============================
-    # Orchestrator — single session for NL/FR
+    # Orchestrator — single session per NL/FR (robusto)
     # ===============================
     def run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
         """
@@ -1387,8 +1446,14 @@ elif server_country == "Medipim":
         """
         results = {}
         tmpdir = tempfile.mkdtemp(prefix="medipim_all_")
-        ctx = make_ctx(tmpdir)
+        ctx = None
         try:
+            try:
+                ctx = make_ctx(tmpdir)
+            except WebDriverException as e:
+                st.error(f"❌ Selenium/Chrome non avviato:\n\n{e}")
+                return results
+
             do_login(ctx, email, password)
             step = (end - start) / max(1, len(langs))
             for i, lang in enumerate(langs):
@@ -1400,10 +1465,11 @@ elif server_country == "Medipim":
                     st.error(f"{lang.upper()} export failed: no XLSX found.")
                 prog_widget.progress(start + step * (i + 1))
         finally:
-            try:
-                ctx["driver"].quit()
-            except Exception:
-                pass
+            if ctx and "driver" in ctx:
+                try:
+                    ctx["driver"].quit()
+                except Exception:
+                    pass
             try:
                 shutil.rmtree(tmpdir, ignore_errors=True)
             except Exception:
