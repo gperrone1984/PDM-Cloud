@@ -10,3 +10,4 @@ zeep
 python-multipart
 xlsxwriter
 selenium
+zeep
