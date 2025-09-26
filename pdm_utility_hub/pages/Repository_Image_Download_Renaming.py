@@ -701,15 +701,15 @@ elif server_country == "Medipim":
     st.header("Medipim Image Processing")
     st.markdown("""
     :information_source: **How to use:**
-    - :arrow_right: **Insert your **Medipim login credentials** (email and password).
+    - :arrow_right: **Insert your Medipim login credentials** (email and password).
     - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
     - :arrow_right: **In Akeneo, select the following options:**
-        - **File Type:** CSV or Excel
-        - **All Attributes or Grid Context:** (for Grid Context, select ID)
-        - **With Codes**
+        - **File Type:** CSV or Excel  
+        - **All Attributes or Grid Context** (for Grid Context, select ID)  
+        - **With Codes**  
         - **Without Media**
-    - :arrow_right: **Paste SKUs manually or upload an Excel file with a `sku` column.**
-    - :arrow_right: **- Select which images to download: **NL only**, **FR only**, or **All (NL + FR)**.**
+    - :arrow_right: **Paste SKUs manually or upload a file (Excel/CSV) with a `sku` column.**
+    - :arrow_right: **Select which images to download: NL only, FR only, or All (NL + FR).**
     """)
 
     # ---------------- Session state ----------------
@@ -734,9 +734,12 @@ elif server_country == "Medipim":
             height=120,
             placeholder="e.g. BE04811337 or 4811337",
         )
-        uploaded_skus = st.file_uploader("Or upload an Excel with a 'sku' column (optional)", type=["xlsx"], key="xls_skus")
+        uploaded_skus = st.file_uploader(
+            "Or upload a file with a 'sku' column (Excel or CSV)",
+            type=["xlsx", "csv"],
+            key="xls_skus"
+        )
 
-    
         scope = st.radio("**Select images**", ["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
 
         submitted = st.form_submit_button("Download photos")
@@ -1086,10 +1089,7 @@ elif server_country == "Medipim":
     # SKU parsing (normalizzata)
     # ===============================
     def _normalize_sku(raw: str) -> Optional[str]:
-        """
-        Rimuove tutto ciò che non è cifra e toglie gli zeri iniziali.
-        'BE03678976' -> '3678976'; '0004811337' -> '4811337'
-        """
+        """Rimuove tutto ciò che non è cifra e toglie gli zeri iniziali."""
         if not raw:
             return None
         digits = re.sub(r"\D", "", raw)
@@ -1104,13 +1104,16 @@ elif server_country == "Medipim":
             skus.extend([x.strip() for x in raw if x.strip()])
         if uploaded_file is not None:
             try:
-                df = pd.read_excel(uploaded_file, engine="openpyxl")
-                df.columns = [c.lower() for c in df.columns]
+                if uploaded_file.name.lower().endswith(".csv"):
+                    df = pd.read_csv(uploaded_file, dtype=str)
+                else:
+                    df = pd.read_excel(uploaded_file, engine="openpyxl")
+                df.columns = [c.lower().strip() for c in df.columns]
                 if "sku" in df.columns:
                     ex_skus = df["sku"].astype(str).map(lambda x: x.strip()).tolist()
                     skus.extend([x for x in ex_skus if x])
             except Exception as e:
-                st.error(f"Failed to read uploaded Excel: {e}")
+                st.error(f"Failed to read uploaded file: {e}")
         # normalizza + dedup
         seen, out = set(), []
         for s in skus:
@@ -1119,7 +1122,6 @@ elif server_country == "Medipim":
                 seen.add(norm)
                 out.append(norm)
         return out
-
     # ===============================
     # Photo processing — constants
     # ===============================
