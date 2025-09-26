@@ -734,7 +734,8 @@ elif server_country == "Medipim":
             height=120,
             placeholder="e.g. BE04811337 or 4811337",
         )
-        uploaded_skus = st.file_uploader("Or upload a file with a 'sku' column (Excel or CSV)", type=["xlsx", "csv"],key="xls_skus")
+        uploaded_skus = st.file_uploader("Or upload an Excel with a 'sku' column (optional)", type=["xlsx"], key="xls_skus")
+
     
         scope = st.radio("**Select images**", ["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
 
@@ -1096,31 +1097,28 @@ elif server_country == "Medipim":
             return None
         return digits.lstrip("0") or digits  # se tutto zero, torna "0"
 
- def parse_skus(sku_text: str, uploaded_file) -> List[str]:
-    skus: List[str] = []
-    if sku_text:
-        raw = sku_text.replace(",", " ").split()
-        skus.extend([x.strip() for x in raw if x.strip()])
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.name.lower().endswith(".csv"):
-                df = pd.read_csv(uploaded_file, dtype=str)
-            else:
+    def parse_skus(sku_text: str, uploaded_file) -> List[str]:
+        skus: List[str] = []
+        if sku_text:
+            raw = sku_text.replace(",", " ").split()
+            skus.extend([x.strip() for x in raw if x.strip()])
+        if uploaded_file is not None:
+            try:
                 df = pd.read_excel(uploaded_file, engine="openpyxl")
-            df.columns = [c.lower().strip() for c in df.columns]
-            if "sku" in df.columns:
-                ex_skus = df["sku"].astype(str).map(lambda x: x.strip()).tolist()
-                skus.extend([x for x in ex_skus if x])
-        except Exception as e:
-            st.error(f"Failed to read uploaded file: {e}")
-    # normalizza + dedup
-    seen, out = set(), []
-    for s in skus:
-        norm = _normalize_sku(s)
-        if norm and norm not in seen:
-            seen.add(norm)
-            out.append(norm)
-    return out
+                df.columns = [c.lower() for c in df.columns]
+                if "sku" in df.columns:
+                    ex_skus = df["sku"].astype(str).map(lambda x: x.strip()).tolist()
+                    skus.extend([x for x in ex_skus if x])
+            except Exception as e:
+                st.error(f"Failed to read uploaded Excel: {e}")
+        # normalizza + dedup
+        seen, out = set(), []
+        for s in skus:
+            norm = _normalize_sku(s)
+            if norm and norm not in seen:
+                seen.add(norm)
+                out.append(norm)
+        return out
 
     # ===============================
     # Photo processing — constants
