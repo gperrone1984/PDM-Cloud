@@ -204,7 +204,7 @@ st.sidebar.markdown("""
 <div class='sidebar-desc'>
 - 📥 Downloads images from the selected server<br>
 - 🔄 Resizes images to 1000x1000 in JPEG<br>
-- 🏷️ Renames with a '-h1' suffix
+- 🏷️ Renames with a '-h1, -h2, etc' suffix
 </div>
 """, unsafe_allow_html=True)
 st.sidebar.markdown("<div class='server-select-label'>Select Server Image</div>", unsafe_allow_html=True)
@@ -698,7 +698,19 @@ elif server_country == "Farmadati":
 # SECTION: Medipim (NUOVO)
 # ======================================================
 elif server_country == "Medipim":
-    st.header("Medipim: Export → Download Photos (NL/FR)")
+    st.header("Medipim Image Processing")
+    st.markdown("""
+    :information_source: **How to use:**
+    - :arrow_right: **Insert your **Medipim login credentials** (email and password).
+    - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
+    - :arrow_right: **In Akeneo, select the following options:**
+        - **File Type:** CSV or Excel
+        - **All Attributes or Grid Context:** (for Grid Context, select ID)
+        - **With Codes**
+        - **Without Media**
+    - :arrow_right: **Paste SKUs manually or upload an Excel file with a `sku` column.**
+    - :arrow_right: **- Select which images to download: **NL only**, **FR only**, or **All (NL + FR)**.**
+    """)
 
     # ---------------- Session state ----------------
     if "exports" not in st.session_state:
@@ -712,20 +724,20 @@ elif server_country == "Medipim":
     # UI — Login & SKUs
     # ===============================
     with st.form("login_form", clear_on_submit=False):
-        st.subheader("Login")
+        st.subheader("Medipim Credential")
         email = st.text_input("Email", value="", autocomplete="username")
         password = st.text_input("Password", value="", type="password", autocomplete="current-password")
 
-        st.subheader("SKU input")
+        st.subheader("SKU or CNK codes input")
         sku_text = st.text_area(
-            "Paste SKUs (separated by spaces, commas, or newlines)",
+            "Paste SKU or CNK codes (separated by spaces, commas, or newlines)",
             height=120,
-            placeholder="e.g. 4811337 4811352\n4811329, 4811345",
+            placeholder="e.g. BE04811337 or 4811337",
         )
         uploaded_skus = st.file_uploader("Or upload an Excel with a 'sku' column (optional)", type=["xlsx"], key="xls_skus")
 
-        st.subheader("Images to download")
-        scope = st.radio("Select images", ["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
+        st.subheader("Select images")
+        scope = st.radio(["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
 
         submitted = st.form_submit_button("Download photos")
 
