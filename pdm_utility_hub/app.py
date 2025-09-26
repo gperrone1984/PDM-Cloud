@@ -7,7 +7,7 @@ if 'authenticated' not in st.session_state:
 
 # Page configuration
 st.set_page_config(
-    page_title="PDM Utility Hub",
+    page_title="PDM Utility Hub TEST ENVIRONMENT",
     page_icon="🛠️",
     layout="centered",
     initial_sidebar_state="collapsed"
