@@ -4,19 +4,37 @@ import csv
 import os
 import zipfile
 import shutil
-from PIL import Image, ImageOps, ImageChops, UnidentifiedImageError
+from PIL import Image, ImageOps, ImageChops, UnidentifiedImageError, ImageDraw
 from io import BytesIO
 import tempfile
 import uuid
 import asyncio
 import aiohttp
-import xml.etree.ElementTree as ET # Usiamo la libreria standard
+import xml.etree.ElementTree as ET
 import requests
 from zeep import Client, Settings
 from zeep.wsse.username import UsernameToken
 from zeep.transports import Transport
 from zeep.cache import InMemoryCache
 from zeep.plugins import HistoryPlugin
+
+# ============= IMPORT PER MEDIPIM =============
+import io
+import time
+import json
+import base64
+import pathlib
+import hashlib
+from typing import Dict, List, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
+from selenium import webdriver
+from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+# ==============================================
 
 # Configurazione pagina (DEVE essere la prima operazione)
 st.set_page_config(
@@ -692,67 +710,60 @@ elif server_country == "Farmadati":
 
 
 # ======================================================
-# SECTION: Medipim
+# SECTION: MEDIPIM
 # ======================================================
 elif server_country == "Medipim":
     st.header("Medipim: Export and Download Photos (NL/FR)")
-    # --- incolla qui tutto il codice della tua app Medipim ---
-st.title("Medipim: Login → Export → Download Photos (NL/FR)")
 
-# ---------------- Session state ----------------
-if "exports" not in st.session_state:
-    st.session_state["exports"] = {}
-if "photo_zip" not in st.session_state:
-    st.session_state["photo_zip"] = {}
-if "missing_lists" not in st.session_state:
-    st.session_state["missing_lists"] = {}
+    # ---------------- Session state ----------------
+    if "exports" not in st.session_state:
+        st.session_state["exports"] = {}
+    if "photo_zip" not in st.session_state:
+        st.session_state["photo_zip"] = {}
+    if "missing_lists" not in st.session_state:
+        st.session_state["missing_lists"] = {}
 
-# ===============================
-# UI — Login & SKUs
-# ===============================
-with st.form("login_form", clear_on_submit=False):
-    st.subheader("Login")
-    email = st.text_input("Email", value="", autocomplete="username")
-    password = st.text_input("Password", value="", type="password", autocomplete="current-password")
+    # ===============================
+    # UI — Login & SKUs
+    # ===============================
+    with st.form("login_form", clear_on_submit=False):
+        st.subheader("Login")
+        email = st.text_input("Email", value="", autocomplete="username")
+        password = st.text_input("Password", value="", type="password", autocomplete="current-password")
 
-    st.subheader("SKU input")
-    sku_text = st.text_area(
-        "Paste SKUs (separated by spaces, commas, or newlines)",
-        height=120,
-        placeholder="e.g. 4811337 4811352\n4811329, 4811345",
-    )
-    uploaded_skus = st.file_uploader("Or upload an Excel with a 'sku' column (optional)", type=["xlsx"], key="xls_skus")
+        st.subheader("SKU input")
+        sku_text = st.text_area(
+            "Paste SKUs (separated by spaces, commas, or newlines)",
+            height=120,
+            placeholder="e.g. 4811337 4811352\n4811329, 4811345",
+        )
+        uploaded_skus = st.file_uploader("Or upload an Excel with a 'sku' column (optional)", type=["xlsx"], key="xls_skus")
 
-    st.subheader("Images to download")
-    scope = st.radio("Select images", ["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
+        st.subheader("Images to download")
+        scope = st.radio("Select images", ["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
 
-    submitted = st.form_submit_button("Download photos")
+        submitted = st.form_submit_button("Download photos")
 
-# Clear cache & data button
-clear_clicked = st.button("Clear cache and data", help="Delete temporary files and reset the app state")
-if clear_clicked:
-    for k in ("exports", "photo_zip", "missing_lists"):
-        st.session_state[k] = {}
-    removed = 0
-    tmp_root = tempfile.gettempdir()
-    for name in os.listdir(tmp_root):
-        if name.startswith(("medipim_", "chrome-user-")):
-            try:
-                shutil.rmtree(os.path.join(tmp_root, name), ignore_errors=True)
-                removed += 1
-            except Exception:
-                pass
-    try:
-        st.cache_data.clear()
-    except Exception:
-        pass
-    try:
-        st.cache_resource.clear()
-    except Exception:
-        pass
-    st.success(f"Cache cleared. Removed {removed} temp folder(s) and reset state.")
-
-# ===============================
+    # Clear cache & data button
+    clear_clicked = st.button("Clear cache and data", help="Delete temporary files and reset the app state")
+    if clear_clicked:
+        for k in ("exports", "photo_zip", "missing_lists"):
+            st.session_state[k] = {}
+        removed = 0
+        tmp_root = tempfile.gettempdir()
+        for name in os.listdir(tmp_root):
+            if name.startswith(("medipim_", "chrome-user-")):
+                try:
+                    shutil.rmtree(os.path.join(tmp_root, name), ignore_errors=True)
+                    removed += 1
+                except Exception:
+                    pass
+        try: st.cache_data.clear()
+        except Exception: pass
+        try: st.cache_resource.clear()
+        except Exception: pass
+        st.success(f"Cache cleared. Removed {removed} temp folder(s) and reset state.")
+        # ===============================
 # Selenium driver + helpers
 # ===============================
 def make_ctx(download_dir: str):
@@ -1402,113 +1413,102 @@ def run_exports_with_progress_single_session(email: str, password: str, refs: st
         except Exception:
             pass
     return results
-
-# ===============================
-# Main flow
-# ===============================
 if submitted:
-    st.session_state["exports"] = {}
-    st.session_state["photo_zip"] = {}
-    st.session_state["missing_lists"] = {}
+        st.session_state["exports"] = {}
+        st.session_state["photo_zip"] = {}
+        st.session_state["missing_lists"] = {}
 
-    if not email or not password:
-        st.error("Please enter your email and password.")
-    else:
-        skus = parse_skus(sku_text, uploaded_skus)
-        if not skus:
-            st.error("Please provide at least one SKU (textarea or Excel).")
+        if not email or not password:
+            st.error("Please enter your email and password.")
         else:
-            refs = " ".join(skus)
-            if scope == "NL only":
-                langs = ["nl"]
-            elif scope == "FR only":
-                langs = ["fr"]
+            skus = parse_skus(sku_text, uploaded_skus)
+            if not skus:
+                st.error("Please provide at least one SKU (textarea or Excel).")
             else:
-                langs = ["nl", "fr"]
+                refs = " ".join(skus)
+                if scope == "NL only":
+                    langs = ["nl"]
+                elif scope == "FR only":
+                    langs = ["fr"]
+                else:
+                    langs = ["nl", "fr"]
 
-            # progress globale
-            main_prog = st.progress(0.0)
-            # Phase 1: exports (0.0 → 0.5 se una lingua, 0.0 → 0.6 se due)
-            export_end = 0.5 if len(langs) == 1 else 0.6
-            results = run_exports_with_progress_single_session(email, password, refs, langs, main_prog, 0.0, export_end)
-            if not results:
-                st.stop()
+                main_prog = st.progress(0.0)
+                export_end = 0.5 if len(langs) == 1 else 0.6
+                results = run_exports_with_progress_single_session(email, password, refs, langs, main_prog, 0.0, export_end)
+                if not results:
+                    st.stop()
 
-            # Phase 2: processing per lingua
-            proc_start = export_end
-            proc_end = 1.0
-            per_lang = (proc_end - proc_start) / max(1, len(langs))
+                proc_start = export_end
+                proc_end = 1.0
+                per_lang = (proc_end - proc_start) / max(1, len(langs))
 
-            for i, lg in enumerate(langs):
-                if lg in results:
-                    st.info(f"Processing {lg.upper()} images…")
-                    scaled = ScaledProgress(main_prog, proc_start + per_lang * i, proc_start + per_lang * (i + 1))
-                    z_lg, a_lg, s_lg, miss = build_zip_for_lang(results[lg], lang=lg, progress=scaled)
-                    st.session_state["photo_zip"][lg] = z_lg
-                    st.session_state["missing_lists"][lg] = miss
-                    st.success(f"{lg.upper()}: saved {s_lg} images.")
-            main_prog.progress(1.0)
+                for i, lg in enumerate(langs):
+                    if lg in results:
+                        st.info(f"Processing {lg.upper()} images…")
+                        scaled = ScaledProgress(main_prog, proc_start + per_lang * i, proc_start + per_lang * (i + 1))
+                        z_lg, a_lg, s_lg, miss = build_zip_for_lang(results[lg], lang=lg, progress=scaled)
+                        st.session_state["photo_zip"][lg] = z_lg
+                        st.session_state["missing_lists"][lg] = miss
+                        st.success(f"{lg.upper()}: saved {s_lg} images.")
+                main_prog.progress(1.0)
 
-            # merge ZIP se NL+FR
-            if scope == "All (NL + FR)" and ("nl" in st.session_state["photo_zip"] or "fr" in st.session_state["photo_zip"]):
-                combo = io.BytesIO()
-                with zipfile.ZipFile(combo, mode="w", compression=zipfile.ZIP_DEFLATED) as z:
-                    for lg in ("nl", "fr"):
-                        if lg in st.session_state["photo_zip"]:
-                            with zipfile.ZipFile(io.BytesIO(st.session_state["photo_zip"][lg])) as zlg:
-                                for name in zlg.namelist():
-                                    z.writestr(name, zlg.read(name))
-                st.session_state["photo_zip"]["all"] = combo.getvalue()
+                if scope == "All (NL + FR)" and ("nl" in st.session_state["photo_zip"] or "fr" in st.session_state["photo_zip"]):
+                    combo = io.BytesIO()
+                    with zipfile.ZipFile(combo, mode="w", compression=zipfile.ZIP_DEFLATED) as z:
+                        for lg in ("nl", "fr"):
+                            if lg in st.session_state["photo_zip"]:
+                                with zipfile.ZipFile(io.BytesIO(st.session_state["photo_zip"][lg])) as zlg:
+                                    for name in zlg.namelist():
+                                        z.writestr(name, zlg.read(name))
+                    st.session_state["photo_zip"]["all"] = combo.getvalue()
 
-# ===============================
-# Downloads (ZIP and missing list)
-# ===============================
-if st.session_state["photo_zip"]:
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    base = f"medipim_photos_{ts}"
+    # ---------------- Downloads ----------------
+    if st.session_state["photo_zip"]:
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        base = f"medipim_photos_{ts}"
 
-    st.markdown("### Downloads")
-    if "all" in st.session_state["photo_zip"]:
-        st.download_button(
-            "Download ALL photos (ZIP)",
-            data=io.BytesIO(st.session_state["photo_zip"]["all"]),
-            file_name=f"{base}_ALL.zip",
-            mime="application/zip",
-            key="zip_all",
-        )
-    if "nl" in st.session_state["photo_zip"] and "all" not in st.session_state["photo_zip"]:
-        st.download_button(
-            "Download NL photos (ZIP)",
-            data=io.BytesIO(st.session_state["photo_zip"]["nl"]),
-            file_name=f"{base}_NL.zip",
-            mime="application/zip",
-            key="zip_nl",
-        )
-    if "fr" in st.session_state["photo_zip"] and "all" not in st.session_state["photo_zip"]:
-        st.download_button(
-            "Download FR photos (ZIP)",
-            data=io.BytesIO(st.session_state["photo_zip"]["fr"]),
-            file_name=f"{base}_FR.zip",
-            mime="application/zip",
-            key="zip_fr",
-        )
-
-    if st.session_state["missing_lists"]:
-        miss_all = []
-        for lg, miss in st.session_state["missing_lists"].items():
-            for row in miss:
-                row["Lang"] = lg.upper()
-                miss_all.append(row)
-        if miss_all:
-            miss_df = pd.DataFrame(miss_all)
-            miss_buf = io.BytesIO()
-            with pd.ExcelWriter(miss_buf, engine="openpyxl") as writer:
-                miss_df.to_excel(writer, index=False)
+        st.markdown("### Downloads")
+        if "all" in st.session_state["photo_zip"]:
             st.download_button(
-                "Download missing images list (.xlsx)",
-                data=miss_buf.getvalue(),
-                file_name=f"{base}_MISSING.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="miss_xlsx",
+                "Download ALL photos (ZIP)",
+                data=io.BytesIO(st.session_state["photo_zip"]["all"]),
+                file_name=f"{base}_ALL.zip",
+                mime="application/zip",
+                key="zip_all",
+            )
+        if "nl" in st.session_state["photo_zip"] and "all" not in st.session_state["photo_zip"]:
+            st.download_button(
+                "Download NL photos (ZIP)",
+                data=io.BytesIO(st.session_state["photo_zip"]["nl"]),
+                file_name=f"{base}_NL.zip",
+                mime="application/zip",
+                key="zip_nl",
+            )
+        if "fr" in st.session_state["photo_zip"] and "all" not in st.session_state["photo_zip"]:
+            st.download_button(
+                "Download FR photos (ZIP)",
+                data=io.BytesIO(st.session_state["photo_zip"]["fr"]),
+                file_name=f"{base}_FR.zip",
+                mime="application/zip",
+                key="zip_fr",
             )
 
+        if st.session_state["missing_lists"]:
+            miss_all = []
+            for lg, miss in st.session_state["missing_lists"].items():
+                for row in miss:
+                    row["Lang"] = lg.upper()
+                    miss_all.append(row)
+            if miss_all:
+                miss_df = pd.DataFrame(miss_all)
+                miss_buf = io.BytesIO()
+                with pd.ExcelWriter(miss_buf, engine="openpyxl") as writer:
+                    miss_df.to_excel(writer, index=False)
+                st.download_button(
+                    "Download missing images list (.xlsx)",
+                    data=miss_buf.getvalue(),
+                    file_name=f"{base}_MISSING.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="miss_xlsx",
+                )
