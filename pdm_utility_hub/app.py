@@ -1,31 +1,5 @@
 import streamlit as st
 import hashlib
-import os
-import io
-import time
-import json
-import base64
-import tempfile
-import pathlib
-import hashlib
-import zipfile
-from typing import Dict, List, Tuple, Optional
-import shutil
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import re
-
-import pandas as pd
-import streamlit as st
-
-from PIL import Image, ImageOps, ImageDraw
-import requests
-
-from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 # Initialize authentication
 if 'authenticated' not in st.session_state:
