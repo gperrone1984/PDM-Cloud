@@ -736,8 +736,8 @@ elif server_country == "Medipim":
         )
         uploaded_skus = st.file_uploader("Or upload an Excel with a 'sku' column (optional)", type=["xlsx"], key="xls_skus")
 
-        st.subheader("Select images")
-        scope = st.radio(["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
+    
+        scope = st.radio("Select images", ["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
 
         submitted = st.form_submit_button("Download photos")
 
