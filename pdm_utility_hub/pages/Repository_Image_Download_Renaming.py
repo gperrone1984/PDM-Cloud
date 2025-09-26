@@ -708,7 +708,7 @@ elif server_country == "Medipim":
         - **All Attributes or Grid Context** (for Grid Context, select ID)  
         - **With Codes**  
         - **Without Media**
-    - :arrow_right: **Paste SKUs manually or upload a file (Excel/CSV) with a `sku` column.**
+    - :arrow_right: **Paste SKUs manually or upload a file (Excel/CSV).**
     - :arrow_right: **Select which images to download: NL only, FR only, or All (NL + FR).**
     """)
 
@@ -742,7 +742,7 @@ elif server_country == "Medipim":
 
         scope = st.radio("**Select images**", ["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
 
-        submitted = st.form_submit_button("Download photos")
+        submitted = st.form_submit_button("**Download photos**")
 
     # Clear cache & data button
     clear_clicked = st.button("Clear cache and data", help="Delete temporary files and reset the app state")
