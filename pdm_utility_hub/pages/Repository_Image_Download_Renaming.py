@@ -1070,20 +1070,34 @@ elif server_country == "Medipim":
             return disk.read_bytes()
         return try_save_xlsx_from_perflog(ctx, timeout=15)
 
-    def do_login(ctx, email_addr: str, pwd: str):
-        drv, wait = ctx["driver"], ctx["wait"]
-        drv.get("https://platform.medipim.be/nl/inloggen")
-        handle_cookies(ctx)
+  def do_login(ctx, email_addr: str, pwd: str) -> bool:
+    """Effettua il login a Medipim. Ritorna True se successo, False se fallito."""
+    drv, wait = ctx["driver"], ctx["wait"]
+    drv.get("https://platform.medipim.be/nl/inloggen")
+    handle_cookies(ctx)
+    try:
+        email_el = wait.until(EC.presence_of_element_located((By.ID, "form0.email")))
+        pwd_el = wait.until(EC.presence_of_element_located((By.ID, "form0.password")))
+        email_el.clear(); email_el.send_keys(email_addr)
+        pwd_el.clear();   pwd_el.send_keys(pwd)
+
+        submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SubmitButton")))
+        drv.execute_script("arguments[0].click();", submit)
+
+        # 🔎 Controlla se appare un messaggio di errore login
         try:
-            email_el = wait.until(EC.presence_of_element_located((By.ID, "form0.email")))
-            pwd_el = wait.until(EC.presence_of_element_located((By.ID, "form0.password")))
-            email_el.clear(); email_el.send_keys(email_addr)
-            pwd_el.clear();   pwd_el.send_keys(pwd)
-            submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SubmitButton")))
-            drv.execute_script("arguments[0].click();", submit)
-            wait.until(EC.invisibility_of_element_located((By.ID, "form0.email")))
+            WebDriverWait(drv, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".ErrorMessage, .alert-danger"))
+            )
+            return False  # login fallito
         except TimeoutException:
             pass
+
+        # 🔎 Se il form sparisce → login riuscito
+        wait.until(EC.invisibility_of_element_located((By.ID, "form0.email")))
+        return True
+    except TimeoutException:
+        return False
 
     # ===============================
     # SKU parsing (normalizzata)
@@ -1454,41 +1468,47 @@ elif server_country == "Medipim":
     # ===============================
     # Orchestrator — single session per NL/FR (robusto)
     # ===============================
-    def run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
-        """
-        Una sola sessione Chrome: login una volta, poi export per le lingue richieste
-        """
-        results = {}
-        tmpdir = tempfile.mkdtemp(prefix="medipim_all_")
-        ctx = None
+    ddef run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
+    """
+    Una sola sessione Chrome: login una volta, poi export per le lingue richieste
+    """
+    results = {}
+    tmpdir = tempfile.mkdtemp(prefix="medipim_all_")
+    ctx = None
+    try:
         try:
-            try:
-                ctx = make_ctx(tmpdir)
-            except WebDriverException as e:
-                st.error(f"❌ Selenium/Chrome non avviato:\n\n{e}")
-                return results
+            ctx = make_ctx(tmpdir)
+        except WebDriverException as e:
+            st.error(f"❌ Selenium/Chrome non avviato:\n\n{e}")
+            return results
 
-            do_login(ctx, email, password)
-            step = (end - start) / max(1, len(langs))
-            for i, lang in enumerate(langs):
-                prog_widget.progress(start + step * i)
-                data = run_export_and_get_bytes(ctx, lang, refs)
-                if data:
-                    results[lang] = data
-                else:
-                    st.error(f"{lang.upper()} export failed: no XLSX found.")
-                prog_widget.progress(start + step * (i + 1))
-        finally:
-            if ctx and "driver" in ctx:
-                try:
-                    ctx["driver"].quit()
-                except Exception:
-                    pass
+        # ✅ Login
+        ok = do_login(ctx, email, password)
+        if not ok:
+            st.error("❌ Unable to access the site. Please check your login credentials.")
+            return results
+
+        # ✅ Se login corretto, procedi con gli export
+        step = (end - start) / max(1, len(langs))
+        for i, lang in enumerate(langs):
+            prog_widget.progress(start + step * i)
+            data = run_export_and_get_bytes(ctx, lang, refs)
+            if data:
+                results[lang] = data
+            else:
+                st.error(f"{lang.upper()} export failed: no XLSX found.")
+            prog_widget.progress(start + step * (i + 1))
+    finally:
+        if ctx and "driver" in ctx:
             try:
-                shutil.rmtree(tmpdir, ignore_errors=True)
+                ctx["driver"].quit()
             except Exception:
                 pass
-        return results
+        try:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+    return results
 
     # ===============================
     # Main flow
