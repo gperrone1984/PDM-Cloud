@@ -1353,7 +1353,7 @@ elif server_country == "Medipim":
             val = self.start + (self.end - self.start) * frac
             self.widget.progress(min(1.0, max(0.0, val)))
 
-    def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress) -> Tuple[bytes, int, int, List[Dict[str, str]]]:
+    def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress, requested_skus: Optional[List[str]] = None) -> Tuple[bytes, int, int, List[Dict[str, str]]]:
         """
         Pipeline:
           1) Parse/sort
@@ -1361,6 +1361,7 @@ elif server_country == "Medipim":
           3) Processing parallelo (canvas+hash)
           4) Dedup per CNK
           5) Scrittura ZIP
+          6) + Aggiunta codici richiesti ma NON presenti nell'export (Not present in export)
         """
         products_df, photos_df = _read_book(xlsx_bytes)
         id_cnk = _extract_id_cnk(products_df)
@@ -1390,6 +1391,30 @@ elif server_country == "Medipim":
             cnk = id2cnk.get(pid)
             records.append({"pid": pid, "cnk": cnk, "url": url})
 
+        # -------------------------
+        # NEW: codici richiesti ma NON presenti nell'export
+        # -------------------------
+        missing: List[Dict[str, str]] = []
+        present_cnk_norm = set()
+        try:
+            present_cnk_norm = set(
+                (_normalize_sku(str(c)) or str(c))
+                for c in id_cnk["CNK"].astype(str).tolist()
+            )
+        except Exception:
+            present_cnk_norm = set()
+
+        if requested_skus:
+            req_norm = set()
+            for x in requested_skus:
+                nx = _normalize_sku(str(x))
+                if nx:
+                    req_norm.add(nx)
+            # Codici richiesti ma non presenti nel Products sheet
+            not_in_export = sorted(req_norm - present_cnk_norm)
+            for code in not_in_export:
+                missing.append({"Product ID": None, "CNK": code, "URL": None, "Reason": "Not present in export"})
+
         # Download parallelo (0→40%)
         dl_prog = ScaledProgress(progress.widget, progress.start, progress.start + (progress.end - progress.start) * 0.40)
         url_list = [rec["url"] for rec in records]
@@ -1408,7 +1433,6 @@ elif server_country == "Medipim":
         saved = 0
         cnk_hashes: Dict[str, set] = {}
         cnk_phashes: Dict[str, List[int]] = {}
-        missing: List[Dict[str, str]] = []
 
         total = len(records)
         done = 0
@@ -1470,7 +1494,7 @@ elif server_country == "Medipim":
             if frac >= next_update:
                 zip_prog.progress(frac); next_update += 0.05
 
-        # prodotti senza righe "Photos"
+        # Prodotti presenti nell'export ma senza righe "Photos"
         for pid, cnk in id_cnk.values:
             pid = str(pid)
             cnk = str(cnk)
@@ -1527,6 +1551,57 @@ elif server_country == "Medipim":
         return results
 
     # ===============================
+    # Merge missing NL/FR senza duplicati, con Lang aggregata
+    # ===============================
+    def merge_missing_across_languages(missing_by_lang: Dict[str, List[Dict[str, str]]]) -> List[Dict[str, str]]:
+        order = {"NL": 0, "FR": 1}
+        combined: Dict[str, Dict[str, object]] = {}
+
+        for lg, rows in missing_by_lang.items():
+            tag = lg.upper()
+            for row in rows:
+                cnk = row.get("CNK")
+                pid = row.get("Product ID")
+                # usa CNK come chiave, altrimenti PID
+                key = (str(cnk) if cnk not in (None, "", "None") else f"PID:{pid or ''}")
+                if key not in combined:
+                    combined[key] = {
+                        "Product ID": pid,
+                        "CNK": cnk if cnk not in (None, "", "None") else None,
+                        "Lang": set(),
+                        "Reason": set(),
+                    }
+                combined[key]["Lang"].add(tag)
+                reason = (row.get("Reason") or "").strip()
+                if reason:
+                    combined[key]["Reason"].add(reason)
+
+        out: List[Dict[str, str]] = []
+        for key, entry in combined.items():
+            langs = sorted(list(entry["Lang"]), key=lambda x: order.get(x, 99))
+            reasons = sorted(list(entry["Reason"]))
+            out.append({
+                "Product ID": entry["Product ID"],
+                "CNK": entry["CNK"],
+                "Lang": ", ".join(langs),
+                "Reason": " | ".join(reasons) if reasons else "",
+            })
+
+        # Ordina per CNK (numerico se possibile), poi per Product ID
+        def sort_key(r):
+            cnk = r.get("CNK") or ""
+            pid = r.get("Product ID") or ""
+            def to_int(s):
+                try:
+                    return int(str(s))
+                except Exception:
+                    return float('inf')
+            return (cnk in ("", None), to_int(cnk), pid in ("", None), to_int(pid))
+
+        out.sort(key=sort_key)
+        return out
+
+    # ===============================
     # Main flow
     # ===============================
     if submitted:
@@ -1563,7 +1638,8 @@ elif server_country == "Medipim":
                     if lg in results:
                         st.info(f"Processing {lg.upper()} images…")
                         scaled = ScaledProgress(main_prog, proc_start + per_lang * i, proc_start + per_lang * (i + 1))
-                        z_lg, a_lg, s_lg, miss = build_zip_for_lang(results[lg], lang=lg, progress=scaled)
+                        # PASSO i codici richiesti per poter aggiungere "Not present in export"
+                        z_lg, a_lg, s_lg, miss = build_zip_for_lang(results[lg], lang=lg, progress=scaled, requested_skus=skus)
                         st.session_state["photo_zip"][lg] = z_lg
                         st.session_state["missing_lists"][lg] = miss
                         st.success(f"{lg.upper()}: saved {s_lg} images.")
@@ -1613,16 +1689,19 @@ elif server_country == "Medipim":
             )
 
         if st.session_state["missing_lists"]:
-            miss_all = []
-            for lg, miss in st.session_state["missing_lists"].items():
-                for row in miss:
-                    row["Lang"] = lg.upper()
-                    miss_all.append(row)
-            if miss_all:
-                miss_df = pd.DataFrame(miss_all)
+            merged_missing = merge_missing_across_languages(st.session_state["missing_lists"])
+            if merged_missing:
+                miss_df = pd.DataFrame(merged_missing)
                 miss_buf = io.BytesIO()
                 with pd.ExcelWriter(miss_buf, engine="openpyxl") as writer:
                     miss_df.to_excel(writer, index=False)
+                st.download_button(
+                    "Download missing images list (.xlsx)",
+                    data=miss_df.to_csv(index=False).encode("utf-8"),
+                    file_name=f"{base}_MISSING.csv",
+                    mime="text/csv",
+                    key="miss_csv",
+                )
                 st.download_button(
                     "Download missing images list (.xlsx)",
                     data=miss_buf.getvalue(),
