@@ -695,60 +695,56 @@ elif server_country == "Farmadati":
                 st.info("No errors found.")
 
 # ======================================================
-# SECTION: Medipim (NUOVO)
+# SECTION: Medipim (NEW)
 # ======================================================
 elif server_country == "Medipim":
     st.header("Medipim Image Processing")
     st.markdown("""
-    :information_source: **How to use:**
-    - :arrow_right: **Insert your Medipim login credentials** (email and password).
-    - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
-    - :arrow_right: **In Akeneo, select the following options:**
-        - **File Type:** CSV or Excel  
+    :information_source: **How to use**
+    - **Enter your Medipim login credentials** (email and password).
+    - **Create a list of products:** use **SKU** (or **CNK**) codes.
+    - **In Akeneo, create a quick report** with:
+        - **File type:** CSV or Excel  
         - **All Attributes or Grid Context** (for Grid Context, select ID)  
         - **With Codes**  
         - **Without Media**
-    - :arrow_right: **Paste SKUs manually or upload a file (Excel/CSV).**
-    - :arrow_right: **Select which images to download: NL only, FR only, or All (NL + FR).**
+    - **Paste SKUs/CNKs manually or upload a file (Excel/CSV).**
+    - **Maximum 100 SKUs or CNK codes** can be loaded per run (from text area or file).
     """)
 
-    # ---------------- Session state ----------------
-    if "exports" not in st.session_state:
+    # ---- One-time init for this page: ensure empty creds on first access
+    if "medipim_init_done" not in st.session_state:
         st.session_state["exports"] = {}
-    if "photo_zip" not in st.session_state:
         st.session_state["photo_zip"] = {}
-    if "missing_lists" not in st.session_state:
         st.session_state["missing_lists"] = {}
+        st.session_state["medipim_email"] = ""
+        st.session_state["medipim_password"] = ""
+        st.session_state["medipim_init_done"] = True
 
     # ===============================
-    # UI — Login & SKUs
+    # Scope selection (outside the form)
     # ===============================
-    with st.form("login_form", clear_on_submit=False):
-        st.subheader("Medipim Credential")
-        email = st.text_input("Email", value="", autocomplete="username")
-        password = st.text_input("Password", value="", type="password", autocomplete="current-password")
+    st.markdown("➡️ **Select which images to download: NL only, FR only, or All (NL + FR).**")
+    scope = st.radio(
+        "Select images",
+        ["All (NL + FR)", "NL only", "FR only"],
+        index=0,
+        horizontal=True,
+        key="medipim_scope"
+    )
 
-        st.subheader("SKU or CNK codes input")
-        sku_text = st.text_area(
-            "Paste SKU or CNK codes (separated by spaces, commas, or newlines)",
-            height=120,
-            placeholder="e.g. BE04811337 or 4811337",
-        )
-        uploaded_skus = st.file_uploader(
-            "Or upload a file with a 'sku' column (Excel or CSV)",
-            type=["xlsx", "csv"],
-            key="xls_skus"
-        )
-
-        scope = st.radio("**Select images**", ["All (NL + FR)", "NL only", "FR only"], index=0, horizontal=True)
-
-        submitted = st.form_submit_button("**Download photos**")
-
-    # Clear cache & data button
-    clear_clicked = st.button("Clear cache and data", help="Delete temporary files and reset the app state")
+    # ===============================
+    # Clear cache & data button (positioned right under the scope text)
+    # ===============================
+    clear_clicked = st.button("🧹 Clear Cache and Reset Data", help="Delete temporary files, reset the app state, and clear login fields")
     if clear_clicked:
+        # Reset session-state containers
         for k in ("exports", "photo_zip", "missing_lists"):
             st.session_state[k] = {}
+        # Clear credential fields
+        st.session_state["medipim_email"] = ""
+        st.session_state["medipim_password"] = ""
+        # Remove temp folders
         removed = 0
         tmp_root = tempfile.gettempdir()
         for name in os.listdir(tmp_root):
@@ -758,6 +754,7 @@ elif server_country == "Medipim":
                     removed += 1
                 except Exception:
                     pass
+        # Clear Streamlit caches
         try:
             st.cache_data.clear()
         except Exception:
@@ -769,10 +766,43 @@ elif server_country == "Medipim":
         st.success(f"Cache cleared. Removed {removed} temp folder(s) and reset state.")
 
     # ===============================
-    # Selenium driver + helpers (ROBUSTI)
+    # UI — Login & SKUs
+    # ===============================
+    with st.form("login_form", clear_on_submit=False):
+        st.subheader("Medipim credential")  # (lowercase 'c', as requested)
+        email = st.text_input(
+            "Email",
+            key="medipim_email",
+            autocomplete="off",
+            placeholder="Enter your Medipim email"
+        )
+        password = st.text_input(
+            "Password",
+            key="medipim_password",
+            type="password",
+            autocomplete="off",
+            placeholder="Enter your Medipim password"
+        )
+
+        st.subheader("SKU or CNK codes input")
+        sku_text = st.text_area(
+            "Paste SKU or CNK codes (separated by spaces, commas, or newlines) — up to 100 codes",
+            height=120,
+            placeholder="e.g. BE04811337 or 4811337 (max 100 codes)"
+        )
+        uploaded_skus = st.file_uploader(
+            "Or upload a file with a 'sku' column (Excel or CSV) — up to 100 codes",
+            type=["xlsx", "csv"],
+            key="xls_skus"
+        )
+
+        submitted = st.form_submit_button("**Download photos**")
+
+    # ===============================
+    # Selenium driver + helpers (ROBUST)
     # ===============================
     def _find_chrome_binary_and_driver():
-        """Prova a individuare Chrome/Chromium e chromedriver in vari percorsi."""
+        """Try to locate Chrome/Chromium and chromedriver in common paths."""
         import shutil as _shutil
 
         chrome_candidates = [
@@ -800,7 +830,7 @@ elif server_country == "Medipim":
         return chrome_binary, chromedriver
 
     def make_ctx(download_dir: str):
-        """Crea un contesto Selenium robusto (headless new → headless classico; Service esplicito se driver presente)."""
+        """Create a robust Selenium context (try headless new → fallback classic headless; explicit Service if driver exists)."""
         from selenium.webdriver.chrome.service import Service
 
         os.makedirs(download_dir, exist_ok=True)
@@ -835,7 +865,7 @@ elif server_country == "Medipim":
 
         chrome_binary, chromedriver = _find_chrome_binary_and_driver()
 
-        # Prova 1: headless new
+        # Attempt 1: headless new
         opt = build_options("--headless=new")
         if chrome_binary:
             opt.binary_location = chrome_binary
@@ -846,7 +876,7 @@ elif server_country == "Medipim":
             else:
                 driver = webdriver.Chrome(options=opt)
         except WebDriverException as e_first:
-            # Prova 2: headless classico
+            # Attempt 2: classic headless
             opt = build_options("--headless")
             if chrome_binary:
                 opt.binary_location = chrome_binary
@@ -863,14 +893,14 @@ elif server_country == "Medipim":
                     f"- chromedriver:  {chromedriver!r}\n"
                     f"- first error:   {e_first}\n"
                     f"- second error:  {e_second}\n\n"
-                    "Controlla che in packages.txt ci siano 'chromium' e 'chromium-driver' e che i percorsi sopra esistano."
+                    "Make sure 'chromium' and 'chromium-driver' are installed and paths exist."
                 )
                 raise WebDriverException(msg) from e_second
 
         wait = WebDriverWait(driver, 40)
         actions = ActionChains(driver)
 
-        # Abilita CDP per download ed eventi rete
+        # Enable CDP for network and downloads
         try:
             driver.execute_cdp_cmd("Network.enable", {})
         except Exception:
@@ -1071,12 +1101,12 @@ elif server_country == "Medipim":
         return try_save_xlsx_from_perflog(ctx, timeout=15)
 
     # ===============================
-    # 🔹 do_login MODIFICATO: ritorna bool e intercetta errori credenziali
+    # do_login (returns bool; handles bad credentials)
     # ===============================
     def do_login(ctx, email_addr: str, pwd: str) -> bool:
         """
-        Effettua il login a Medipim.
-        Ritorna True se successo, False se credenziali errate o timeout.
+        Perform Medipim login.
+        Returns True if successful, False if wrong credentials or timeout.
         """
         drv, wait = ctx["driver"], ctx["wait"]
         drv.get("https://platform.medipim.be/nl/inloggen")
@@ -1092,7 +1122,7 @@ elif server_country == "Medipim":
             submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SubmitButton")))
             drv.execute_script("arguments[0].click();", submit)
 
-            # Attendi esito: form scompare (successo) oppure compare messaggio errore (fallimento)
+            # Wait for outcome: form disappears (success) or an error appears (failure)
             try:
                 WebDriverWait(drv, 12).until(
                     lambda d: (
@@ -1104,7 +1134,7 @@ elif server_country == "Medipim":
             except TimeoutException:
                 return False
 
-            # Valuta stato finale
+            # Evaluate final state
             err_present = bool(drv.find_elements(By.CSS_SELECTOR, ".ErrorMessage, .alert-danger, .form-error, .FormError, .Message--error, .message.error"))
             form_present = bool(drv.find_elements(By.ID, "form0.email"))
             if err_present or ("/inloggen" in drv.current_url and form_present):
@@ -1115,22 +1145,23 @@ elif server_country == "Medipim":
             return False
 
     # ===============================
-    # SKU parsing (normalizzata)
+    # SKU parsing (normalized) with limit=100
     # ===============================
     def _normalize_sku(raw: str) -> Optional[str]:
-        """Rimuove tutto ciò che non è cifra e toglie gli zeri iniziali."""
+        """Keep digits only and strip leading zeros."""
         if not raw:
             return None
         digits = re.sub(r"\D", "", raw)
         if not digits:
             return None
-        return digits.lstrip("0") or digits  # se tutto zero, torna "0"
+        return digits.lstrip("0") or digits  # if all zeros, return "0"
 
-    def parse_skus(sku_text: str, uploaded_file) -> List[str]:
+    def parse_skus(sku_text: str, uploaded_file, limit: int = 100) -> List[str]:
         skus: List[str] = []
         if sku_text:
             raw = sku_text.replace(",", " ").split()
             skus.extend([x.strip() for x in raw if x.strip()])
+
         if uploaded_file is not None:
             try:
                 if uploaded_file.name.lower().endswith(".csv"):
@@ -1143,13 +1174,18 @@ elif server_country == "Medipim":
                     skus.extend([x for x in ex_skus if x])
             except Exception as e:
                 st.error(f"Failed to read uploaded file: {e}")
-        # normalizza + dedup
+
+        # normalize + dedup
         seen, out = set(), []
         for s in skus:
             norm = _normalize_sku(s)
             if norm and norm not in seen:
                 seen.add(norm)
                 out.append(norm)
+
+        if len(out) > limit:
+            st.warning(f"You provided {len(out)} codes. Only the first {limit} will be used.")
+            out = out[:limit]
         return out
 
     # ===============================
@@ -1214,7 +1250,7 @@ elif server_country == "Medipim":
     # ===============================
     @st.cache_data(show_spinner=False, ttl=24*3600, max_entries=10000)
     def _fetch_url_cached(url: str) -> Optional[bytes]:
-        """Scarica e cache-a i bytes dell'immagine per URL (cache 24h)."""
+        """Download and cache image bytes by URL (24h cache)."""
         try:
             r = requests.get(url, timeout=15)
             if r.status_code != 200 or not r.content:
@@ -1224,7 +1260,7 @@ elif server_country == "Medipim":
             return None
 
     def _download_many(urls: List[str], progress: Optional[st.progress] = None, max_workers: int = 16) -> Dict[str, Optional[bytes]]:
-        """Scarica in parallelo gli URL, usando la cache per ogni URL."""
+        """Parallel download of URLs, using the per-URL cache."""
         results: Dict[str, Optional[bytes]] = {}
         total = len(urls)
         done = 0
@@ -1245,7 +1281,7 @@ elif server_country == "Medipim":
                 frac = done / total
                 if progress and frac >= next_update:
                     progress.progress(min(1.0, frac))
-                    next_update += 0.05  # update ogni 5%
+                    next_update += 0.05  # every 5%
 
         if progress:
             progress.progress(1.0)
@@ -1270,7 +1306,7 @@ elif server_country == "Medipim":
         img.save(buf, format="JPEG", quality=85, optimize=True)
         return buf.getvalue()
 
-    # Compat LANCZOS
+    # LANCZOS compat
     try:
         _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS  # PIL >= 9.1
     except Exception:
@@ -1300,7 +1336,7 @@ elif server_country == "Medipim":
         return hashlib.md5(b).hexdigest()
 
     def _process_one(url: str, content: Optional[bytes]) -> Tuple[str, Optional[Tuple[bytes, int, str]]]:
-        """Elabora un'immagine (bytes → canvas 1000 → jpeg → dhash/md5)."""
+        """Process one image (→ 1000 canvas → jpeg → dhash/md5)."""
         if content is None:
             return url, None
         try:
@@ -1315,7 +1351,7 @@ elif server_country == "Medipim":
             return url, None
 
     def _process_many(urls: List[str], contents: Dict[str, Optional[bytes]], progress: Optional[st.progress] = None, max_workers: int = 16) -> Dict[str, Optional[Tuple[bytes, int, str]]]:
-        """Elabora in parallelo i contenuti scaricati."""
+        """Parallel processing of downloaded contents."""
         results: Dict[str, Optional[Tuple[bytes, int, str]]] = {}
         total = len(urls)
         done = 0
@@ -1340,10 +1376,10 @@ elif server_country == "Medipim":
         return results
 
     # ===============================
-    # Build ZIP (parallelo + dedup)
+    # Build ZIP (parallel + dedup) and collect missing
     # ===============================
     class ScaledProgress:
-        """Proxy around una progress bar unica, con finestra [start,end]."""
+        """Proxy around a single progress bar using a window [start,end]."""
         def __init__(self, widget, start: float, end: float):
             self.widget = widget
             self.start = float(start)
@@ -1353,15 +1389,20 @@ elif server_country == "Medipim":
             val = self.start + (self.end - self.start) * frac
             self.widget.progress(min(1.0, max(0.0, val)))
 
-    def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress, requested_skus: Optional[List[str]] = None) -> Tuple[bytes, int, int, List[Dict[str, str]]]:
+    def build_zip_for_lang(
+        xlsx_bytes: bytes,
+        lang: str,
+        progress: ScaledProgress,
+        requested_skus: Optional[List[str]] = None
+    ) -> Tuple[bytes, int, int, List[Dict[str, str]]]:
         """
         Pipeline:
           1) Parse/sort
-          2) Download parallelo (cache)
-          3) Processing parallelo (canvas+hash)
-          4) Dedup per CNK
-          5) Scrittura ZIP
-          6) + Aggiunta codici richiesti ma NON presenti nell'export (Not present in export)
+          2) Parallel download (cached)
+          3) Parallel processing (canvas+hash)
+          4) Per-CNK dedup
+          5) ZIP writing
+          6) + Add requested codes NOT present in export ("Not present in export")
         """
         products_df, photos_df = _read_book(xlsx_bytes)
         id_cnk = _extract_id_cnk(products_df)
@@ -1391,16 +1432,11 @@ elif server_country == "Medipim":
             cnk = id2cnk.get(pid)
             records.append({"pid": pid, "cnk": cnk, "url": url})
 
-        # -------------------------
-        # NEW: codici richiesti ma NON presenti nell'export
-        # -------------------------
+        # ---- NEW: requested codes not present in export
         missing: List[Dict[str, str]] = []
         present_cnk_norm = set()
         try:
-            present_cnk_norm = set(
-                (_normalize_sku(str(c)) or str(c))
-                for c in id_cnk["CNK"].astype(str).tolist()
-            )
+            present_cnk_norm = set((_normalize_sku(str(c)) or str(c)) for c in id_cnk["CNK"].astype(str).tolist())
         except Exception:
             present_cnk_norm = set()
 
@@ -1410,17 +1446,16 @@ elif server_country == "Medipim":
                 nx = _normalize_sku(str(x))
                 if nx:
                     req_norm.add(nx)
-            # Codici richiesti ma non presenti nel Products sheet
             not_in_export = sorted(req_norm - present_cnk_norm)
             for code in not_in_export:
                 missing.append({"Product ID": None, "CNK": code, "URL": None, "Reason": "Not present in export"})
 
-        # Download parallelo (0→40%)
+        # Download (0→40%)
         dl_prog = ScaledProgress(progress.widget, progress.start, progress.start + (progress.end - progress.start) * 0.40)
         url_list = [rec["url"] for rec in records]
         url_contents = _download_many(url_list, progress=dl_prog, max_workers=16)
 
-        # Processing parallelo (40→85%)
+        # Processing (40→85%)
         pr_prog = ScaledProgress(progress.widget, progress.start + (progress.end - progress.start) * 0.40, progress.start + (progress.end - progress.start) * 0.85)
         processed_map = _process_many(url_list, url_contents, progress=pr_prog, max_workers=16)
 
@@ -1494,7 +1529,7 @@ elif server_country == "Medipim":
             if frac >= next_update:
                 zip_prog.progress(frac); next_update += 0.05
 
-        # Prodotti presenti nell'export ma senza righe "Photos"
+        # Products present in export but with no "Photos" rows
         for pid, cnk in id_cnk.values:
             pid = str(pid)
             cnk = str(cnk)
@@ -1506,11 +1541,11 @@ elif server_country == "Medipim":
         return zip_buf.getvalue(), attempted, saved, missing
 
     # ===============================
-    # Orchestrator — single session per NL/FR (robusto)
+    # Orchestrator — single Chrome session for NL/FR (robust)
     # ===============================
     def run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
         """
-        Una sola sessione Chrome: login una volta, poi export per le lingue richieste
+        One Chrome session: log in once, then export for requested languages.
         """
         results = {}
         tmpdir = tempfile.mkdtemp(prefix="medipim_all_")
@@ -1519,16 +1554,16 @@ elif server_country == "Medipim":
             try:
                 ctx = make_ctx(tmpdir)
             except WebDriverException as e:
-                st.error(f"❌ Selenium/Chrome non avviato:\n\n{e}")
+                st.error(f"Selenium/Chrome failed to start:\n\n{e}")
                 return results
 
-            # ✅ Login con gestione credenziali errate
+            # Login and handle bad credentials
             ok = do_login(ctx, email, password)
             if not ok:
                 st.error("Unable to access the site. Please check your login credentials.")
                 return results
 
-            # ✅ Se login corretto, procedi con gli export
+            # Exports
             step = (end - start) / max(1, len(langs))
             for i, lang in enumerate(langs):
                 prog_widget.progress(start + step * i)
@@ -1551,7 +1586,7 @@ elif server_country == "Medipim":
         return results
 
     # ===============================
-    # Merge missing NL/FR senza duplicati, con Lang aggregata
+    # Merge missing for NL/FR without duplicates; aggregate Lang as "NL, FR"
     # ===============================
     def merge_missing_across_languages(missing_by_lang: Dict[str, List[Dict[str, str]]]) -> List[Dict[str, str]]:
         order = {"NL": 0, "FR": 1}
@@ -1562,7 +1597,6 @@ elif server_country == "Medipim":
             for row in rows:
                 cnk = row.get("CNK")
                 pid = row.get("Product ID")
-                # usa CNK come chiave, altrimenti PID
                 key = (str(cnk) if cnk not in (None, "", "None") else f"PID:{pid or ''}")
                 if key not in combined:
                     combined[key] = {
@@ -1587,7 +1621,7 @@ elif server_country == "Medipim":
                 "Reason": " | ".join(reasons) if reasons else "",
             })
 
-        # Ordina per CNK (numerico se possibile), poi per Product ID
+        # Sort by CNK (numeric if possible), then by Product ID
         def sort_key(r):
             cnk = r.get("CNK") or ""
             pid = r.get("Product ID") or ""
@@ -1612,14 +1646,15 @@ elif server_country == "Medipim":
         if not email or not password:
             st.error("Please enter your email and password.")
         else:
-            skus = parse_skus(sku_text, uploaded_skus)
+            skus = parse_skus(sku_text, uploaded_skus, limit=100)
             if not skus:
                 st.error("Please provide at least one SKU (textarea or Excel).")
             else:
                 refs = " ".join(skus)
-                if scope == "NL only":
+                sel = st.session_state.get("medipim_scope", "All (NL + FR)")
+                if sel == "NL only":
                     langs = ["nl"]
-                elif scope == "FR only":
+                elif sel == "FR only":
                     langs = ["fr"]
                 else:
                     langs = ["nl", "fr"]
@@ -1638,14 +1673,13 @@ elif server_country == "Medipim":
                     if lg in results:
                         st.info(f"Processing {lg.upper()} images…")
                         scaled = ScaledProgress(main_prog, proc_start + per_lang * i, proc_start + per_lang * (i + 1))
-                        # PASSO i codici richiesti per poter aggiungere "Not present in export"
                         z_lg, a_lg, s_lg, miss = build_zip_for_lang(results[lg], lang=lg, progress=scaled, requested_skus=skus)
                         st.session_state["photo_zip"][lg] = z_lg
                         st.session_state["missing_lists"][lg] = miss
                         st.success(f"{lg.upper()}: saved {s_lg} images.")
                 main_prog.progress(1.0)
 
-                if scope == "All (NL + FR)" and ("nl" in st.session_state["photo_zip"] or "fr" in st.session_state["photo_zip"]):
+                if sel == "All (NL + FR)" and ("nl" in st.session_state["photo_zip"] or "fr" in st.session_state["photo_zip"]):
                     combo = io.BytesIO()
                     with zipfile.ZipFile(combo, mode="w", compression=zipfile.ZIP_DEFLATED) as z:
                         for lg in ("nl", "fr"):
@@ -1656,7 +1690,7 @@ elif server_country == "Medipim":
                     st.session_state["photo_zip"]["all"] = combo.getvalue()
 
     # ===============================
-    # Downloads (ZIP and missing list)
+    # Downloads (ZIP and single Excel for missing)
     # ===============================
     if st.session_state["photo_zip"]:
         ts = time.strftime("%Y%m%d_%H%M%S")
@@ -1694,11 +1728,12 @@ elif server_country == "Medipim":
                 miss_df = pd.DataFrame(merged_missing)
                 miss_buf = io.BytesIO()
                 with pd.ExcelWriter(miss_buf, engine="openpyxl") as writer:
-                    miss_df.to_excel(writer, index=False)                
+                    miss_df.to_excel(writer, index=False)
                 st.download_button(
-                    "Download missing images list (.xlsx)",
+                    "Download missing products (.xlsx)",
                     data=miss_buf.getvalue(),
                     file_name=f"{base}_MISSING.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="miss_xlsx",
                 )
+
