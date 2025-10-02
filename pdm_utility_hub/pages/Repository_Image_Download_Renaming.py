@@ -1694,14 +1694,7 @@ elif server_country == "Medipim":
                 miss_df = pd.DataFrame(merged_missing)
                 miss_buf = io.BytesIO()
                 with pd.ExcelWriter(miss_buf, engine="openpyxl") as writer:
-                    miss_df.to_excel(writer, index=False)
-                st.download_button(
-                    "Download missing images list (.xlsx)",
-                    data=miss_df.to_csv(index=False).encode("utf-8"),
-                    file_name=f"{base}_MISSING.csv",
-                    mime="text/csv",
-                    key="miss_csv",
-                )
+                    miss_df.to_excel(writer, index=False)                
                 st.download_button(
                     "Download missing images list (.xlsx)",
                     data=miss_buf.getvalue(),
