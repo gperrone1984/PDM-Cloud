@@ -767,6 +767,7 @@ elif server_country == "Medipim":
         except Exception:
             pass
         st.success(f"Cache cleared. Removed {removed} temp folder(s) and reset state.")
+
     # ===============================
     # Selenium driver + helpers (ROBUSTI)
     # ===============================
@@ -897,11 +898,186 @@ elif server_country == "Medipim":
             except Exception:
                 pass
 
+    def ensure_language(ctx, lang: str):  # 'nl' or 'fr'
+        drv, wait = ctx["driver"], ctx["wait"]
+        base = f"https://platform.medipim.be/{'nl/home' if lang=='nl' else 'fr/home'}"
+        drv.get(base)
+        handle_cookies(ctx)
+        try:
+            trig_span = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".I18nMenu .Dropdown > button.trigger span")))
+            current = trig_span.text.strip().lower()
+        except TimeoutException:
+            current = ""
+        if current != lang:
+            try:
+                trig = drv.find_element(By.CSS_SELECTOR, ".I18nMenu .Dropdown > button.trigger")
+                drv.execute_script("arguments[0].click();", trig); time.sleep(0.2)
+                if lang == "nl":
+                    lang_link = wait.until(EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'I18nMenu')]//a[contains(@href,'/nl/')]")))
+                else:
+                    lang_link = wait.until(EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'I18nMenu')]//a[contains(@href,'/fr/')]")))
+                drv.execute_script("arguments[0].click();", lang_link); time.sleep(0.4)
+            except TimeoutException:
+                pass
+
+    def open_export_dropdown(ctx):
+        drv, wait = ctx["driver"], ctx["wait"]
+        split = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.SplitButton")))
+        trigger = split.find_element(By.CSS_SELECTOR, "button.trigger")
+        for _ in range(4):
+            if trigger.get_attribute("aria-expanded") == "true":
+                break
+            drv.execute_script("arguments[0].click();", trigger); time.sleep(0.25)
+        if trigger.get_attribute("aria-expanded") != "true":
+            raise TimeoutException("Export dropdown did not open.")
+        dd = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.Dropdown.open div.dropdown")))
+        return dd
+
+    def click_excel_option(ctx, dropdown):
+        actions = ctx["actions"]
+        excel_btn = dropdown.find_element(By.CSS_SELECTOR, "div.actions > button:nth-of-type(2)")
+        try:
+            actions.move_to_element(excel_btn).pause(0.1).click().perform()
+        except Exception:
+            ctx["driver"].execute_script("arguments[0].click();", excel_btn)
+
+    def select_all_attributes(ctx):
+        drv = ctx["driver"]
+        try:
+            all_attr = WebDriverWait(drv, 8).until(
+                EC.element_to_be_clickable((By.XPATH,
+                    "//a[contains(., 'Alles selecteren')] | //button[contains(., 'Alles selecteren')] | "
+                    "//a[contains(., 'Sélectionner tout') or contains(., 'Selectionner tout')] | "
+                    "//button[contains(., 'Sélectionner tout') or contains(., 'Selectionner tout')] | "
+                    "//button[contains(., 'Select all')] | //a[contains(., 'Select all')]"
+                ))
+            )
+            drv.execute_script("arguments[0].click();", all_attr)
+        except TimeoutException:
+            pass
+
+    def wait_for_xlsx_on_disk(ctx, start_time: float, timeout=60) -> pathlib.Path | None:
+        download_dir = ctx["download_dir"]
+        end = time.time() + timeout
+        margin = 2.0
+        while time.time() < end:
+            files = [
+                (f, os.path.getmtime(os.path.join(download_dir, f)))
+                for f in os.listdir(download_dir)
+                if f.lower().endswith(".xlsx")
+            ]
+            fresh = [f for f, m in files if m >= (start_time - margin)]
+            if fresh:
+                fresh.sort(key=lambda f: os.path.getmtime(os.path.join(download_dir, f)), reverse=True)
+                return pathlib.Path(os.path.join(download_dir, fresh[0]))
+            time.sleep(0.5)
+        return None
+
+    def try_save_xlsx_from_perflog(ctx, timeout=15) -> bytes | None:
+        drv = ctx["driver"]
+        deadline = time.time() + timeout
+        seen = set()
+        try:
+            drv.execute_cdp_cmd("Network.enable", {})
+        except Exception:
+            pass
+        while time.time() < deadline:
+            try:
+                logs = drv.get_log('performance')
+            except Exception:
+                logs = []
+            for entry in logs:
+                try:
+                    payload = json.loads(entry.get('message', '{}'))
+                    m = payload.get("message", {})
+                except Exception:
+                    continue
+                if m.get("method") != "Network.responseReceived":
+                    continue
+                params = m.get("params", {})
+                resp = params.get("response", {})
+                req_id = params.get("requestId")
+                if not req_id or req_id in seen:
+                    continue
+                seen.add(req_id)
+                mime = (resp.get("mimeType") or "").lower()
+                url = (resp.get("url") or "").lower()
+                if ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in mime) or url.endswith(".xlsx"):
+                    try:
+                        body = drv.execute_cdp_cmd('Network.getResponseBody', {'requestId': req_id})
+                        data = body.get('body', '')
+                        raw = base64.b64decode(data) if body.get('base64Encoded') else data.encode('utf-8', 'ignore')
+                        return raw
+                    except Exception:
+                        pass
+            time.sleep(0.3)
+        return None
+
+    def run_export_and_get_bytes(ctx, lang: str, refs: str) -> bytes | None:
+        ensure_language(ctx, lang)
+        if lang == "nl":
+            url = f"https://platform.medipim.be/nl/producten?search=refcode[{refs.replace(' ', '%20')}]"
+        else:
+            url = f"https://platform.medipim.be/fr/produits?search=refcode[{refs.replace(' ', '%20')}]"
+
+        drv, wait = ctx["driver"], ctx["wait"]
+        drv.get(url)
+        handle_cookies(ctx)
+
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.SplitButton")))
+        dd = open_export_dropdown(ctx)
+        click_excel_option(ctx, dd)
+
+        select_all_attributes(ctx)
+
+        try:
+            create_btn = WebDriverWait(drv, 25).until(
+                EC.element_to_be_clickable((By.XPATH,
+                    "//button[contains(., 'AANMAKEN')] | //button[contains(., 'Aanmaken')] | "
+                    "//button[contains(., 'Create')] | "
+                    "//button[contains(., 'Créer') or contains(., 'Creer')]"
+                ))
+            )
+            drv.execute_script("arguments[0].click();", create_btn)
+        except TimeoutException:
+            pass
+
+        try:
+            WebDriverWait(drv, 40).until(
+                EC.presence_of_element_located((By.XPATH,
+                    "//*[contains(., 'Export is klaar') or contains(., 'Export gereed') or "
+                    "contains(., 'Export ready') or contains(., 'Export prêt') or contains(., 'Export est prêt')]"
+                ))
+            )
+        except TimeoutException:
+            pass
+
+        dl = wait.until(EC.element_to_be_clickable((By.XPATH,
+            "//button[contains(., 'DOWNLOAD')] | //a[contains(., 'DOWNLOAD')] | "
+            "//button[contains(., 'Download')] | //a[contains(., 'Download')] | "
+            "//button[contains(., 'Télécharger') or contains(., 'Telecharger')] | "
+            "//a[contains(., 'Télécharger') or contains(., 'Telecharger')]"
+        )))
+        href = (dl.get_attribute("href") or dl.get_attribute("data-href") or "").strip().lower()
+        start = time.time()
+        if href and (not href.startswith("javascript")) and (not href.startswith("blob:")):
+            drv.get(href)
+        else:
+            drv.execute_script("arguments[0].click();", dl)
+
+        disk = wait_for_xlsx_on_disk(ctx, start_time=start, timeout=60)
+        if disk and disk.exists():
+            return disk.read_bytes()
+        return try_save_xlsx_from_perflog(ctx, timeout=15)
+
     # ===============================
-    # 🔹 do_login aggiornato
+    # 🔹 do_login MODIFICATO: ritorna bool e intercetta errori credenziali
     # ===============================
     def do_login(ctx, email_addr: str, pwd: str) -> bool:
-        """Effettua il login a Medipim. Ritorna True se successo, False se fallito."""
+        """
+        Effettua il login a Medipim.
+        Ritorna True se successo, False se credenziali errate o timeout.
+        """
         drv, wait = ctx["driver"], ctx["wait"]
         drv.get("https://platform.medipim.be/nl/inloggen")
         handle_cookies(ctx)
@@ -916,20 +1092,28 @@ elif server_country == "Medipim":
             submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SubmitButton")))
             drv.execute_script("arguments[0].click();", submit)
 
-            # 🔎 Controlla se appare un messaggio di errore login
+            # Attendi esito: form scompare (successo) oppure compare messaggio errore (fallimento)
             try:
-                WebDriverWait(drv, 5).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, ".ErrorMessage, .alert-danger"))
+                WebDriverWait(drv, 12).until(
+                    lambda d: (
+                        "/inloggen" not in d.current_url
+                        or len(d.find_elements(By.ID, "form0.email")) == 0
+                        or len(d.find_elements(By.CSS_SELECTOR, ".ErrorMessage, .alert-danger, .form-error, .FormError, .Message--error, .message.error")) > 0
+                    )
                 )
-                return False  # login fallito
             except TimeoutException:
-                pass
+                return False
 
-            # 🔎 Se il form sparisce → login riuscito
-            wait.until(EC.invisibility_of_element_located((By.ID, "form0.email")))
+            # Valuta stato finale
+            err_present = bool(drv.find_elements(By.CSS_SELECTOR, ".ErrorMessage, .alert-danger, .form-error, .FormError, .Message--error, .message.error"))
+            form_present = bool(drv.find_elements(By.ID, "form0.email"))
+            if err_present or ("/inloggen" in drv.current_url and form_present):
+                return False
+
             return True
         except TimeoutException:
             return False
+
     # ===============================
     # SKU parsing (normalizzata)
     # ===============================
@@ -1026,50 +1210,6 @@ elif server_country == "Medipim":
         return out
 
     # ===============================
-    # Orchestrator — single session per NL/FR (robusto)
-    # ===============================
-    def run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
-        """
-        Una sola sessione Chrome: login una volta, poi export per le lingue richieste
-        """
-        results = {}
-        tmpdir = tempfile.mkdtemp(prefix="medipim_all_")
-        ctx = None
-        try:
-            try:
-                ctx = make_ctx(tmpdir)
-            except WebDriverException as e:
-                st.error(f"❌ Selenium/Chrome non avviato:\n\n{e}")
-                return results
-
-            # ✅ Login
-            ok = do_login(ctx, email, password)
-            if not ok:
-                st.error("❌ Unable to access the site. Please check your login credentials.")
-                return results
-
-            # ✅ Se login corretto, procedi con gli export
-            step = (end - start) / max(1, len(langs))
-            for i, lang in enumerate(langs):
-                prog_widget.progress(start + step * i)
-                data = run_export_and_get_bytes(ctx, lang, refs)
-                if data:
-                    results[lang] = data
-                else:
-                    st.error(f"{lang.upper()} export failed: no XLSX found.")
-                prog_widget.progress(start + step * (i + 1))
-        finally:
-            if ctx and "driver" in ctx:
-                try:
-                    ctx["driver"].quit()
-                except Exception:
-                    pass
-            try:
-                shutil.rmtree(tmpdir, ignore_errors=True)
-            except Exception:
-                pass
-        return results
-    # ===============================
     # Image helpers (cached & parallel)
     # ===============================
     @st.cache_data(show_spinner=False, ttl=24*3600, max_entries=10000)
@@ -1084,6 +1224,7 @@ elif server_country == "Medipim":
             return None
 
     def _download_many(urls: List[str], progress: Optional[st.progress] = None, max_workers: int = 16) -> Dict[str, Optional[bytes]]:
+        """Scarica in parallelo gli URL, usando la cache per ogni URL."""
         results: Dict[str, Optional[bytes]] = {}
         total = len(urls)
         done = 0
@@ -1104,7 +1245,7 @@ elif server_country == "Medipim":
                 frac = done / total
                 if progress and frac >= next_update:
                     progress.progress(min(1.0, frac))
-                    next_update += 0.05
+                    next_update += 0.05  # update ogni 5%
 
         if progress:
             progress.progress(1.0)
@@ -1129,12 +1270,14 @@ elif server_country == "Medipim":
         img.save(buf, format="JPEG", quality=85, optimize=True)
         return buf.getvalue()
 
+    # Compat LANCZOS
     try:
-        _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
+        _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS  # PIL >= 9.1
     except Exception:
         _RESAMPLE_LANCZOS = Image.LANCZOS
 
     def _dhash(image: Image.Image, hash_size: int = 8) -> int:
+        """Perceptual difference hash (dHash)."""
         img = image.convert("L").resize((hash_size + 1, hash_size), _RESAMPLE_LANCZOS)
         pixels = list(img.getdata())
         w = hash_size + 1
@@ -1157,6 +1300,7 @@ elif server_country == "Medipim":
         return hashlib.md5(b).hexdigest()
 
     def _process_one(url: str, content: Optional[bytes]) -> Tuple[str, Optional[Tuple[bytes, int, str]]]:
+        """Elabora un'immagine (bytes → canvas 1000 → jpeg → dhash/md5)."""
         if content is None:
             return url, None
         try:
@@ -1171,6 +1315,7 @@ elif server_country == "Medipim":
             return url, None
 
     def _process_many(urls: List[str], contents: Dict[str, Optional[bytes]], progress: Optional[st.progress] = None, max_workers: int = 16) -> Dict[str, Optional[Tuple[bytes, int, str]]]:
+        """Elabora in parallelo i contenuti scaricati."""
         results: Dict[str, Optional[Tuple[bytes, int, str]]] = {}
         total = len(urls)
         done = 0
@@ -1198,6 +1343,7 @@ elif server_country == "Medipim":
     # Build ZIP (parallelo + dedup)
     # ===============================
     class ScaledProgress:
+        """Proxy around una progress bar unica, con finestra [start,end]."""
         def __init__(self, widget, start: float, end: float):
             self.widget = widget
             self.start = float(start)
@@ -1208,8 +1354,177 @@ elif server_country == "Medipim":
             self.widget.progress(min(1.0, max(0.0, val)))
 
     def build_zip_for_lang(xlsx_bytes: bytes, lang: str, progress: ScaledProgress) -> Tuple[bytes, int, int, List[Dict[str, str]]]:
-        # … [omesso: stesso codice che avevi già, invariato, per parsing prodotti/foto, dedup e salvataggio ZIP] …
-        pass  # <- qui ci va la funzione completa che hai già (molto lunga)
+        """
+        Pipeline:
+          1) Parse/sort
+          2) Download parallelo (cache)
+          3) Processing parallelo (canvas+hash)
+          4) Dedup per CNK
+          5) Scrittura ZIP
+        """
+        products_df, photos_df = _read_book(xlsx_bytes)
+        id_cnk = _extract_id_cnk(products_df)
+        photos_raw = _extract_photos(photos_df)
+
+        id2cnk: Dict[str, str] = {str(row["ID"]).strip(): str(row["CNK"]).strip() for _, row in id_cnk.iterrows()}
+
+        try:
+            all_pids_set = set(photos_raw["Product ID"].astype(str).str.strip())
+        except Exception:
+            all_pids_set = set()
+
+        def _rank_type(t: str) -> int:
+            if not isinstance(t, str):
+                return 99
+            return TYPE_RANK.get(t.strip().lower(), 99)
+
+        photos = photos_raw.dropna(subset=["URL"]).copy()
+        photos["rank_type"] = photos["Type"].map(_rank_type)
+        photos["rank_photoid"] = pd.to_numeric(photos["Photo ID"], errors="coerce").fillna(10**9).astype(int)
+        photos.sort_values(["Product ID", "rank_type", "rank_photoid"], inplace=True)
+
+        records = []
+        for _, r in photos.iterrows():
+            pid = str(r["Product ID"]).strip()
+            url = str(r["URL"]).strip()
+            cnk = id2cnk.get(pid)
+            records.append({"pid": pid, "cnk": cnk, "url": url})
+
+        # Download parallelo (0→40%)
+        dl_prog = ScaledProgress(progress.widget, progress.start, progress.start + (progress.end - progress.start) * 0.40)
+        url_list = [rec["url"] for rec in records]
+        url_contents = _download_many(url_list, progress=dl_prog, max_workers=16)
+
+        # Processing parallelo (40→85%)
+        pr_prog = ScaledProgress(progress.widget, progress.start + (progress.end - progress.start) * 0.40, progress.start + (progress.end - progress.start) * 0.85)
+        processed_map = _process_many(url_list, url_contents, progress=pr_prog, max_workers=16)
+
+        # Dedup + ZIP (85→100%)
+        zip_prog = ScaledProgress(progress.widget, progress.start + (progress.end - progress.start) * 0.85, progress.end)
+        zip_buf = io.BytesIO()
+        zf = zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED)
+
+        attempted = 0
+        saved = 0
+        cnk_hashes: Dict[str, set] = {}
+        cnk_phashes: Dict[str, List[int]] = {}
+        missing: List[Dict[str, str]] = []
+
+        total = len(records)
+        done = 0
+        next_update = 0.0
+
+        for rec in records:
+            attempted += 1
+            pid = rec["pid"]
+            cnk = rec["cnk"]
+            url = rec["url"]
+
+            if not cnk:
+                missing.append({"Product ID": pid, "CNK": None, "URL": url, "Reason": "No CNK"})
+                done += 1
+                frac = done / max(1, total)
+                if frac >= next_update:
+                    zip_prog.progress(frac); next_update += 0.05
+                continue
+
+            triple = processed_map.get(url)
+            if not triple:
+                reason = "Download failed" if url_contents.get(url) is None else "Processing failed"
+                missing.append({"Product ID": pid, "CNK": cnk, "URL": url, "Reason": reason})
+                done += 1
+                frac = done / max(1, total)
+                if frac >= next_update:
+                    zip_prog.progress(frac); next_update += 0.05
+                continue
+
+            jb, dh, md5 = triple
+
+            if cnk not in cnk_hashes:
+                cnk_hashes[cnk] = set()
+            if cnk not in cnk_phashes:
+                cnk_phashes[cnk] = []
+
+            if md5 in cnk_hashes[cnk]:
+                done += 1
+                frac = done / max(1, total)
+                if frac >= next_update:
+                    zip_prog.progress(frac); next_update += 0.05
+                continue
+            if any(_hamming(dh, existing) <= DEDUP_DHASH_THRESHOLD for existing in cnk_phashes[cnk]):
+                done += 1
+                frac = done / max(1, total)
+                if frac >= next_update:
+                    zip_prog.progress(frac); next_update += 0.05
+                continue
+
+            cnk_hashes[cnk].add(md5)
+            cnk_phashes[cnk].append(dh)
+            n = len(cnk_hashes[cnk])
+            filename = f"BE0{cnk}-{lang}-h{n}.jpg"
+            zf.writestr(filename, jb)
+            saved += 1
+
+            done += 1
+            frac = done / max(1, total)
+            if frac >= next_update:
+                zip_prog.progress(frac); next_update += 0.05
+
+        # prodotti senza righe "Photos"
+        for pid, cnk in id_cnk.values:
+            pid = str(pid)
+            cnk = str(cnk)
+            if pid not in all_pids_set:
+                missing.append({"Product ID": pid, "CNK": cnk, "URL": None, "Reason": "No photos in export"})
+
+        zf.close()
+        zip_prog.progress(1.0)
+        return zip_buf.getvalue(), attempted, saved, missing
+
+    # ===============================
+    # Orchestrator — single session per NL/FR (robusto)
+    # ===============================
+    def run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
+        """
+        Una sola sessione Chrome: login una volta, poi export per le lingue richieste
+        """
+        results = {}
+        tmpdir = tempfile.mkdtemp(prefix="medipim_all_")
+        ctx = None
+        try:
+            try:
+                ctx = make_ctx(tmpdir)
+            except WebDriverException as e:
+                st.error(f"❌ Selenium/Chrome non avviato:\n\n{e}")
+                return results
+
+            # ✅ Login con gestione credenziali errate
+            ok = do_login(ctx, email, password)
+            if not ok:
+                st.error("Unable to access the site. Please check your login credentials.")
+                return results
+
+            # ✅ Se login corretto, procedi con gli export
+            step = (end - start) / max(1, len(langs))
+            for i, lang in enumerate(langs):
+                prog_widget.progress(start + step * i)
+                data = run_export_and_get_bytes(ctx, lang, refs)
+                if data:
+                    results[lang] = data
+                else:
+                    st.error(f"{lang.upper()} export failed: no XLSX found.")
+                prog_widget.progress(start + step * (i + 1))
+        finally:
+            if ctx and "driver" in ctx:
+                try:
+                    ctx["driver"].quit()
+                except Exception:
+                    pass
+            try:
+                shutil.rmtree(tmpdir, ignore_errors=True)
+            except Exception:
+                pass
+        return results
 
     # ===============================
     # Main flow
