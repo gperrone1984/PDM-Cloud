@@ -1078,8 +1078,10 @@ elif server_country == "Medipim":
     try:
         email_el = wait.until(EC.presence_of_element_located((By.ID, "form0.email")))
         pwd_el = wait.until(EC.presence_of_element_located((By.ID, "form0.password")))
-        email_el.clear(); email_el.send_keys(email_addr)
-        pwd_el.clear();   pwd_el.send_keys(pwd)
+        email_el.clear()
+        email_el.send_keys(email_addr)
+        pwd_el.clear()
+        pwd_el.send_keys(pwd)
 
         submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SubmitButton")))
         drv.execute_script("arguments[0].click();", submit)
@@ -1098,6 +1100,7 @@ elif server_country == "Medipim":
         return True
     except TimeoutException:
         return False
+
 
     # ===============================
     # SKU parsing (normalizzata)
@@ -1468,7 +1471,7 @@ elif server_country == "Medipim":
     # ===============================
     # Orchestrator — single session per NL/FR (robusto)
     # ===============================
-    ddef run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
+   def run_exports_with_progress_single_session(email: str, password: str, refs: str, langs: List[str], prog_widget, start: float, end: float):
     """
     Una sola sessione Chrome: login una volta, poi export per le lingue richieste
     """
@@ -1509,6 +1512,7 @@ elif server_country == "Medipim":
         except Exception:
             pass
     return results
+
 
     # ===============================
     # Main flow
