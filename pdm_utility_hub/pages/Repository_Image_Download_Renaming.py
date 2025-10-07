@@ -719,6 +719,8 @@ elif server_country == "Medipim":
         st.session_state["missing_lists"] = {}
         st.session_state["medipim_email"] = ""
         st.session_state["medipim_password"] = ""
+        # tiene traccia delle cartelle profilo Chrome create da QUESTA sessione
+        st.session_state["chrome_user_dirs_created"] = []
         st.session_state["medipim_init_done"] = True
 
     # ===============================
@@ -744,16 +746,34 @@ elif server_country == "Medipim":
         # Clear credential fields
         st.session_state["medipim_email"] = ""
         st.session_state["medipim_password"] = ""
-        # Remove temp folders
+
         removed = 0
-        tmp_root = tempfile.gettempdir()
-        for name in os.listdir(tmp_root):
-            if name.startswith(("medipim_", "chrome-user-")):
-                try:
-                    shutil.rmtree(os.path.join(tmp_root, name), ignore_errors=True)
-                    removed += 1
-                except Exception:
-                    pass
+
+        # 1) rimuovi SOLO le cartelle profilo Chrome create da QUESTA sessione
+        for p in st.session_state.get("chrome_user_dirs_created", []):
+            try:
+                shutil.rmtree(p, ignore_errors=True)
+                removed += 1
+            except Exception:
+                pass
+        st.session_state["chrome_user_dirs_created"] = []
+
+        # 2) (opzionale) garbage collection: rimuovi residui > 24h in /tmp
+        try:
+            tmp_root = tempfile.gettempdir()
+            cutoff = time.time() - 24 * 3600
+            for name in os.listdir(tmp_root):
+                if name.startswith(("medipim_", "chrome-user-")):
+                    full = os.path.join(tmp_root, name)
+                    try:
+                        if os.path.isdir(full) and os.path.getmtime(full) < cutoff:
+                            shutil.rmtree(full, ignore_errors=True)
+                            removed += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         # Clear Streamlit caches
         try:
             st.cache_data.clear()
@@ -801,6 +821,8 @@ elif server_country == "Medipim":
     # ===============================
     # Selenium driver + helpers (ROBUST)
     # ===============================
+    import uuid  # <--- nuovo import per user-data-dir univoco
+
     def _find_chrome_binary_and_driver():
         """Try to locate Chrome/Chromium and chromedriver in common paths."""
         import shutil as _shutil
@@ -834,8 +856,12 @@ elif server_country == "Medipim":
         from selenium.webdriver.chrome.service import Service
 
         os.makedirs(download_dir, exist_ok=True)
-        user_dir = os.path.join(tempfile.gettempdir(), f"chrome-user-{os.getpid()}")
-        os.makedirs(user_dir, exist_ok=True)
+
+        # Cartella profilo *unica* per ogni run/sessione (evita lock su user-data-dir)
+        user_dir = tempfile.mkdtemp(prefix=f"chrome-user-{uuid.uuid4().hex}-")
+        # tieni traccia per cleanup mirato di QUESTA sessione
+        created_dirs = st.session_state.setdefault("chrome_user_dirs_created", [])
+        created_dirs.append(user_dir)
 
         def build_options(headless_arg="--headless=new"):
             opt = webdriver.ChromeOptions()
@@ -910,7 +936,7 @@ elif server_country == "Medipim":
         except Exception:
             pass
 
-        return {"driver": driver, "wait": wait, "actions": actions, "download_dir": download_dir}
+        return {"driver": driver, "wait": wait, "actions": actions, "download_dir": download_dir, "user_dir": user_dir}
 
     def handle_cookies(ctx):
         drv = ctx["driver"]
@@ -1579,6 +1605,12 @@ elif server_country == "Medipim":
                     ctx["driver"].quit()
                 except Exception:
                     pass
+            # rimuovi la cartella profilo di *questa* esecuzione
+            try:
+                if ctx and ctx.get("user_dir"):
+                    shutil.rmtree(ctx["user_dir"], ignore_errors=True)
+            except Exception:
+                pass
             try:
                 shutil.rmtree(tmpdir, ignore_errors=True)
             except Exception:
