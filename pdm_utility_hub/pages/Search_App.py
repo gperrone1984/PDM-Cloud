@@ -126,8 +126,7 @@ if st.button("Search and Download"):
                 if pat.search(text_noacc):
                     per_term_counts[j] += 1
                     any_match = True
-                    # use the original input term label
-                    row_hits.append(term_inputs[j])
+                    row_hits.append(term_inputs[j])  # keep original label
             matches_any.append(any_match)
             matched_terms_per_row.append(row_hits)
 
@@ -141,13 +140,9 @@ if st.button("Search and Download"):
         mask = pd.Series(matches_any, index=df.index)
         result = df[mask].copy()
 
-        # Add "Matched terms" column (semicolon-separated), aligned by index
+        # Add "Matched terms" column (semicolon-separated) AT THE END
         matched_series = pd.Series([';'.join(hits) for hits in matched_terms_per_row], index=df.index)
-        result['Matched terms'] = matched_series.loc[result.index].values
-
-        # Optional: move "Matched terms" as the first column
-        cols = ['Matched terms'] + [c for c in result.columns if c != 'Matched terms']
-        result = result[cols]
+        result['Matched terms'] = matched_series.loc[result.index].values  # appends as last column
 
         # Build report df: one row per original input term, with matched row count
         report_df = pd.DataFrame({
