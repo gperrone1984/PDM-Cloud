@@ -48,7 +48,7 @@ st.sidebar.markdown("---")
 st.title("🔎 Search App")
 st.write(
     "Upload an Excel file and enter up to ten search terms. "
-    "The search will match terms with any spacing or case variations, and ignores accents."
+    "The search matches any spacing/case variations and ignores accents (e.g., caffè/caffé/caffe)."
 )
 st.write("Click 'Clear cache and data' to reset inputs, then 'Search and Download' to get your results.")
 
@@ -103,31 +103,33 @@ if st.button("Search and Download"):
 
         # Prepare data as string and build one big text per row
         df_str = df.astype(str).fillna("")
-        # Precompute per-row joined text (and a de-accented version)
         row_texts = df_str.apply(lambda r: ' '.join(r.values.astype(str)), axis=1)
         row_texts_noacc = row_texts.map(strip_accents)
 
         # --- Build patterns (accent-insensitive + spacing-insensitive) ---
-        # We normalize the *terms* by removing accents and spaces.
         term_noacc = [strip_accents(t) for t in term_inputs]
         term_compact = [re.sub(r"\s+", "", t) for t in term_noacc]
         pattern_strings = [build_spacing_pattern(t) for t in term_compact]
         compiled_patterns = [re.compile(p, flags=re.IGNORECASE) for p in pattern_strings]
 
-        # ---- Iterate rows with progress, collect matches & per-term counts ----
+        # ---- Iterate rows with progress, collect matches, per-term counts, and matched terms per row ----
         progress_bar = progress_placeholder.progress(0, text="Processing rows...")
         total_rows = len(row_texts_noacc)
         matches_any = []
         per_term_counts = [0] * len(compiled_patterns)
+        matched_terms_per_row = []
 
         for idx, text_noacc in enumerate(row_texts_noacc):
             any_match = False
-            # Count a row once per term if it matches that term
+            row_hits = []
             for j, pat in enumerate(compiled_patterns):
                 if pat.search(text_noacc):
                     per_term_counts[j] += 1
                     any_match = True
+                    # use the original input term label
+                    row_hits.append(term_inputs[j])
             matches_any.append(any_match)
+            matched_terms_per_row.append(row_hits)
 
             if idx % 100 == 0 or idx == total_rows - 1:
                 progress = (idx + 1) / total_rows
@@ -136,7 +138,16 @@ if st.button("Search and Download"):
         progress_placeholder.empty()
 
         # Filter the original df by rows that matched at least one term
-        result = df[pd.Series(matches_any, index=df.index)]
+        mask = pd.Series(matches_any, index=df.index)
+        result = df[mask].copy()
+
+        # Add "Matched terms" column (semicolon-separated), aligned by index
+        matched_series = pd.Series([';'.join(hits) for hits in matched_terms_per_row], index=df.index)
+        result['Matched terms'] = matched_series.loc[result.index].values
+
+        # Optional: move "Matched terms" as the first column
+        cols = ['Matched terms'] + [c for c in result.columns if c != 'Matched terms']
+        result = result[cols]
 
         # Build report df: one row per original input term, with matched row count
         report_df = pd.DataFrame({
