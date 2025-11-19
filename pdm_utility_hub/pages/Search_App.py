@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import unicodedata
-from io import BytesIO
+from io import BytesIO, StringIO
 
 # -------------------- PAGE CONFIG --------------------
 st.set_page_config(
@@ -58,14 +58,20 @@ def clear_all():
         st.session_state.pop(k, None)
 
 def strip_accents(s: str) -> str:
-    """Remove diacritics (è/é -> e) for accent-insensitive matching."""
     if not isinstance(s, str):
         s = str(s)
     return ''.join(ch for ch in unicodedata.normalize('NFD', s) if not unicodedata.combining(ch))
 
 def build_spacing_pattern(term_no_accents: str) -> str:
-    """Allow arbitrary spaces between characters and enforce word boundaries."""
     return r"(?<!\w)" + ''.join([re.escape(c) + r"\s*" for c in term_no_accents]) + r"(?!\w)"
+
+def excel_to_csv_buffer(excel_file) -> StringIO:
+    """Converte l'Excel caricato in CSV (in memoria, senza scrivere su disco)."""
+    df = pd.read_excel(excel_file, dtype=str)
+    csv_buffer = StringIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_buffer.seek(0)
+    return csv_buffer
 
 st.button("Clear cache and data", on_click=clear_all)
 
@@ -77,7 +83,6 @@ for i in range(1, 11):
     if term and term.strip():
         term_inputs.append(term.strip())
 
-# Optional: custom filename
 st.markdown("**Optional: Enter a custom name for the output Excel file (without extension)**")
 custom_filename = st.text_input("", value="filtered_results", key='custom_filename')
 
@@ -97,29 +102,30 @@ if st.button("Search and Download"):
         compiled_patterns = [re.compile(p, flags=re.IGNORECASE) for p in pattern_strings]
         per_term_counts = [0] * len(compiled_patterns)
 
-        # --- TRY CHUNKED READING ---
-        chunksize = 5000  # puoi regolarlo se hai più RAM
+        # --- CONVERT EXCEL TO CSV BUFFER ---
+        try:
+            st.info("Converting Excel to CSV for chunk processing... (this may take a minute)")
+            csv_buffer = excel_to_csv_buffer(uploaded_file)
+        except Exception as e:
+            st.error(f"Error converting Excel file: {e}")
+            st.stop()
+
+        # --- READ CSV IN CHUNKS ---
+        chunksize = 5000
         matches = []
         total_rows = 0
         matched_rows_total = 0
 
-        try:
-            progress_bar = progress_placeholder.progress(0, text="Reading file and processing in chunks...")
-            reader = pd.read_excel(uploaded_file, dtype=str, chunksize=chunksize)
-        except Exception as e:
-            st.error(f"Error reading file: {e}")
-            st.stop()
+        progress_bar = progress_placeholder.progress(0, text="Processing CSV in chunks...")
 
-        # Iterate over chunks
-        for chunk_idx, chunk in enumerate(reader):
+        for chunk_idx, chunk in enumerate(pd.read_csv(csv_buffer, dtype=str, chunksize=chunksize)):
             total_rows += len(chunk)
-            chunk_str = chunk.astype(str).fillna("")
-            row_texts = chunk_str.apply(lambda r: ' '.join(r.values.astype(str)), axis=1)
+            chunk = chunk.fillna("")
+            row_texts = chunk.apply(lambda r: ' '.join(r.values.astype(str)), axis=1)
             row_texts_noacc = row_texts.map(strip_accents)
 
             mask = []
             matched_terms = []
-
             for text_noacc in row_texts_noacc:
                 row_hits = []
                 any_match = False
@@ -139,7 +145,7 @@ if st.button("Search and Download"):
 
             progress_bar.progress(
                 text=f"Processed {total_rows} rows...",
-                value=min(1.0, (chunk_idx + 1) * chunksize / total_rows)
+                value=min(1.0, (chunk_idx + 1) * chunksize / (total_rows + 1))
             )
 
         progress_placeholder.empty()
@@ -156,7 +162,6 @@ if st.button("Search and Download"):
             "Rows matched": per_term_counts
         })
 
-        # --- SUMMARY ---
         st.success(f"Matched {matched_rows_total} rows across {len(term_inputs)} terms.")
         st.dataframe(report_df, use_container_width=True)
 
@@ -175,4 +180,3 @@ if st.button("Search and Download"):
             file_name=f"{safe_filename}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
