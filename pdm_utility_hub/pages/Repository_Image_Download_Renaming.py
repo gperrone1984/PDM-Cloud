@@ -53,21 +53,28 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
 st.markdown(
     """
     <style>
-    /* Imposta larghezza sidebar e FORZA con !important */
-    [data-testid="stSidebar"] > div:first-child {
-        width: 550px !important;
-        min-width: 550px !important;
-        max-width: 550px !important;
-    }
+   [data-testid="stSidebar"] {
+  background-color: #f2f3f5 !important;        /* colore dell’intera colonna */
+}
+
+[data-testid="stSidebar"] > div:first-child {
+  width: 540px !important;                      /* blocca la larghezza */
+  min-width: 540px !important;
+  max-width: 540px !important;
+
+  background-color: #f2f3f5 !important;         /* grigio su tutta l’altezza */
+  height: 100vh !important;                      /* occupa tutto lo schermo */
+  position: sticky !important;                   /* resta “ancorata” in alto */
+  top: 0 !important;
+  overflow-y: auto !important;                   /* scroll interno se serve */
+  border-right: 1px solid rgba(0,0,0,0.06);      /* (opz.) separatore sottile */
+}
     /* Nasconde la navigazione automatica generata da Streamlit nella sidebar */
     [data-testid="stSidebarNav"] {
         display: none;
     }
 
-    /* Sfondo per l'INTERA AREA PRINCIPALE - NUOVO COLORE FORZATO */
-    section.main {
-        background-color: #d8dfe6 !important; /* NUOVO COLORE */
-    }
+    
     /* Rendi trasparente il contenitore interno e mantieni il padding */
     div[data-testid="stAppViewContainer"] > section > div.block-container {
          background-color: transparent !important;
