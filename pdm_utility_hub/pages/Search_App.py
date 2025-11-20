@@ -5,18 +5,41 @@ import unicodedata
 from io import BytesIO
 import pandas as pd
 
+# 1) Page config
 st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 
-# --- Sidebar: ONLY the requested button ---
-st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
-st.sidebar.markdown("---")  # separatore
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+     st.switch_page("app.py")
 
-# --- Hide any page links that might appear in the MAIN area ---
+# 2) Global CSS (dal vecchio programma)
 st.markdown("""
 <style>
-section[data-testid="stMain"] a[data-testid="stPageLink"] { display: none !important; }
+  /* nascondi la nav multipagina nella SIDEBAR */
+  [data-testid="stSidebarNav"] { display: none !important; }
+
+  /* stile sidebar, come prima */
+  [data-testid="stSidebar"] > div:first-child {
+      width: 550px !important;
+      min-width: 550px !important;
+      max-width: 550px !important;
+      background-color: #ecf0f1 !important;
+      padding: 10px !important;
+  }
+
+  /* sfondo area main (opzionale, come nel vecchio file) */
+  section.main { background-color: #d8dfe6 !important; }
+  .main .block-container,
+  div[data-testid="stAppViewContainer"] > section > div.block-container {
+      background-color: transparent !important;
+      padding: 2rem 1rem 1rem 1rem !important;
+      border-radius: 0 !important;
+  }
 </style>
 """, unsafe_allow_html=True)
+
+# 3) Sidebar: SOLO il bottone richiesto
+st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
+st.sidebar.markdown("---")
 
 # --- Helpers ---
 def strip_accents(s):
@@ -33,7 +56,7 @@ def clear_all():
         st.session_state.pop(k, None)
 
 # --- UI ---
-st.title("🔎 Search App")
+st.title("Search App:")
 
 st.markdown(
     """
@@ -48,9 +71,9 @@ st.markdown(
 st.button("Clear cache and data", on_click=clear_all)
 
 uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"], key='uploaded_file')
-terms = [st.text_input(f"Term {i}") for i in range(1, 11)]
-terms = [t.strip() for t in terms if t.strip()]
-custom_filename = st.text_input("Output filename", value="filtered_results")
+terms = [st.text_input(f"Term {i}", key=f"term{i}") for i in range(1, 11)]
+terms = [t.strip() for t in terms if t and t.strip()]
+custom_filename = st.text_input("Output filename", value="filtered_results", key="custom_filename")
 
 if st.button("Search and Download"):
     if not uploaded_file:
@@ -105,7 +128,7 @@ if st.button("Search and Download"):
     report_df = pd.DataFrame({"Term": terms, "Rows matched": per_term_counts})
 
     st.success(f"Matched {matched} rows out of ~{total} scanned.")
-    st.dataframe(report_df)
+    st.dataframe(report_df, use_container_width=True)
 
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
@@ -113,9 +136,10 @@ if st.button("Search and Download"):
         report_df.to_excel(writer, sheet_name="Report", index=False)
     buf.seek(0)
 
+    safe_name = re.sub(r'[<>:"/\\\\|?*]', '_', custom_filename.strip()) or "filtered_results"
     st.download_button(
         "Download filtered Excel + report",
         data=buf,
-        file_name=f"{re.sub(r'[<>:\"/\\\\|?*]', '_', custom_filename.strip())}.xlsx",
+        file_name=f"{safe_name}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
