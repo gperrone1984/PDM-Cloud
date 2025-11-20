@@ -28,28 +28,25 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
 st.markdown(
     """
     <style>
-/* Sidebar: grigio pieno, altezza schermo, larghezza fissa */
+  /* Sidebar: grigio pieno, altezza schermo, larghezza fissa */
 [data-testid="stSidebar"] {
   background-color: #f2f3f5 !important;        /* colore dell’intera colonna */
 }
-
-[data-testid="stSidebar"] > div:first-child {
-  width: 540px !important;                      /* blocca la larghezza */
-  min-width: 540px !important;
-  max-width: 540px !important;
-
-  background-color: #f2f3f5 !important;         /* grigio su tutta l’altezza */
-  height: 100vh !important;                      /* occupa tutto lo schermo */
-  position: sticky !important;                   /* resta “ancorata” in alto */
-  top: 0 !important;
-  overflow-y: auto !important;                   /* scroll interno se serve */
-  border-right: 1px solid rgba(0,0,0,0.06);      /* (opz.) separatore sottile */
-}
-
-/* Evita elementi interni bianchi che “bucano” il grigio */
-[data-testid="stSidebar"] .block-container {
-  background: transparent !important;
-}
+    /* Hide the auto-generated Streamlit sidebar navigation */
+    [data-testid="stSidebarNav"] {
+        display: none;
+    }
+    /* Make the internal container transparent while keeping padding/radius */
+    div[data-testid="stAppViewContainer"] > section > div.block-container {
+         background-color: transparent !important;
+         padding: 2rem 1rem 1rem 1rem !important;
+         border-radius: 0.5rem !important;
+    }
+    .main .block-container {
+         background-color: transparent !important;
+         padding: 2rem 1rem 1rem 1rem !important;
+         border-radius: 0.5rem !important;
+    }
     /* Base style for app buttons/placeholder (from hub) - Adapted to the theme */
     .app-container {
         display: flex;
