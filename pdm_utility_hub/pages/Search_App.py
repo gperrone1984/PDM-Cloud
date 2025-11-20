@@ -7,6 +7,10 @@ import pandas as pd
 
 st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 
+# --- Sidebar: SOLO il tasto richiesto ---
+st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
+st.sidebar.markdown("---")  # separatore
+
 # --- Helpers ---
 def strip_accents(s):
     if not isinstance(s, str):
