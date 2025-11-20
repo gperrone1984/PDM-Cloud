@@ -7,9 +7,16 @@ import pandas as pd
 
 st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 
-# --- Sidebar: SOLO il tasto richiesto ---
+# --- Sidebar: ONLY the requested button ---
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")  # separatore
+
+# --- Hide any page links that might appear in the MAIN area ---
+st.markdown("""
+<style>
+section[data-testid="stMain"] a[data-testid="stPageLink"] { display: none !important; }
+</style>
+""", unsafe_allow_html=True)
 
 # --- Helpers ---
 def strip_accents(s):
@@ -26,7 +33,18 @@ def clear_all():
         st.session_state.pop(k, None)
 
 # --- UI ---
-st.title("🔎 Search App (Memory-Safe Mode)")
+st.title("🔎 Search App")
+
+st.markdown(
+    """
+**ℹ️ How to use::**
+- Upload an Excel file (.xlsx or .xls).
+- Enter up to **10** search terms or phrases.
+- Choose the final output filename.
+- Click **Search and Download** to get the filtered Excel + report.
+"""
+)
+
 st.button("Clear cache and data", on_click=clear_all)
 
 uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"], key='uploaded_file')
