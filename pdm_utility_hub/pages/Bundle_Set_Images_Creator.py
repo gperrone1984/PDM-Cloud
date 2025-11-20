@@ -32,6 +32,23 @@ st.markdown(
 [data-testid="stSidebar"] {
   background-color: #f2f3f5 !important;        /* colore dell’intera colonna */
 }
+[data-testid="stSidebar"] > div:first-child {
+  width: 540px !important;                      /* blocca la larghezza */
+  min-width: 540px !important;
+  max-width: 540px !important;
+
+  background-color: #f2f3f5 !important;         /* grigio su tutta l’altezza */
+  height: 100vh !important;                      /* occupa tutto lo schermo */
+  position: sticky !important;                   /* resta “ancorata” in alto */
+  top: 0 !important;
+  overflow-y: auto !important;                   /* scroll interno se serve */
+  border-right: 1px solid rgba(0,0,0,0.06);      /* (opz.) separatore sottile */
+}
+
+/* Evita elementi interni bianchi che “bucano” il grigio */
+[data-testid="stSidebar"] .block-container {
+  background: transparent !important;
+}
     /* Hide the auto-generated Streamlit sidebar navigation */
     [data-testid="stSidebarNav"] {
         display: none;
