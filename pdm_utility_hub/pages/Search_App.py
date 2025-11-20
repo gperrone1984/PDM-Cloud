@@ -8,16 +8,10 @@ import pandas as pd
 # 1) Page config
 st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 
-if 'authenticated' not in st.session_state or not st.session_state.authenticated:
-     st.switch_page("app.py")
-
-# 2) Global CSS (dal vecchio programma)
+# 2) CSS: nascondi la nav multipagina in sidebar (mantieni solo PDM Hub)
 st.markdown("""
 <style>
-  /* nascondi la nav multipagina nella SIDEBAR */
   [data-testid="stSidebarNav"] { display: none !important; }
-
-  /* stile sidebar, come prima */
   [data-testid="stSidebar"] > div:first-child {
       width: 550px !important;
       min-width: 550px !important;
@@ -25,8 +19,6 @@ st.markdown("""
       background-color: #ecf0f1 !important;
       padding: 10px !important;
   }
-
-  /* sfondo area main (opzionale, come nel vecchio file) */
   section.main { background-color: #d8dfe6 !important; }
   .main .block-container,
   div[data-testid="stAppViewContainer"] > section > div.block-container {
@@ -41,7 +33,7 @@ st.markdown("""
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
-# --- Helpers ---
+# ---- helpers ----
 def strip_accents(s):
     if not isinstance(s, str):
         s = str(s)
@@ -51,7 +43,11 @@ def build_spacing_pattern(term):
     return r"(?<!\w)" + ''.join([re.escape(c) + r"\s*" for c in term]) + r"(?!\w)"
 
 def clear_all():
-    keys = ['uploaded_file'] + [f'term{i}' for i in range(1, 11)] + ['custom_filename']
+    keys = (
+        ['uploaded_file'] +
+        [f'term{i}' for i in range(1, 11)] +
+        ['custom_filename', 'download_bytes', 'download_filename']
+    )
     for k in keys:
         st.session_state.pop(k, None)
 
@@ -75,6 +71,7 @@ terms = [st.text_input(f"Term {i}", key=f"term{i}") for i in range(1, 11)]
 terms = [t.strip() for t in terms if t and t.strip()]
 custom_filename = st.text_input("Output filename", value="filtered_results", key="custom_filename")
 
+# --- BLOCCO AZIONE: genera il file e salva in sessione ---
 if st.button("Search and Download"):
     if not uploaded_file:
         st.error("Please upload a file first.")
@@ -130,6 +127,7 @@ if st.button("Search and Download"):
     st.success(f"Matched {matched} rows out of ~{total} scanned.")
     st.dataframe(report_df, use_container_width=True)
 
+    # crea buffer e SALVA IN SESSIONE (così il bottone resta)
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         result_df.to_excel(writer, sheet_name="Filtered", index=False)
@@ -137,9 +135,16 @@ if st.button("Search and Download"):
     buf.seek(0)
 
     safe_name = re.sub(r'[<>:"/\\\\|?*]', '_', custom_filename.strip()) or "filtered_results"
+    st.session_state['download_bytes'] = buf.getvalue()
+    st.session_state['download_filename'] = f"{safe_name}.xlsx"
+
+# --- SEZIONE PERSISTENTE: mostra il download button se c'è un file pronto ---
+if 'download_bytes' in st.session_state and st.session_state['download_bytes']:
     st.download_button(
         "Download filtered Excel + report",
-        data=buf,
-        file_name=f"{safe_name}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        data=st.session_state['download_bytes'],
+        file_name=st.session_state.get('download_filename', "filtered_results.xlsx"),
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_btn",  # chiave fissa per non farlo scomparire
+        use_container_width=True
     )
