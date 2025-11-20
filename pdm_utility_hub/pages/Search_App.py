@@ -8,7 +8,7 @@ import pandas as pd
 # 1) Page config
 st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 
-# 2) CSS: nascondi la nav multipagina in sidebar (mantieni solo PDM Hub)
+# 2) CSS: sidebar solo con PDM Hub
 st.markdown("""
 <style>
   [data-testid="stSidebarNav"] { display: none !important; }
@@ -33,7 +33,7 @@ st.markdown("""
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
-# ---- helpers ----
+# ------------ Helpers & State ------------
 def strip_accents(s):
     if not isinstance(s, str):
         s = str(s)
@@ -42,37 +42,58 @@ def strip_accents(s):
 def build_spacing_pattern(term):
     return r"(?<!\w)" + ''.join([re.escape(c) + r"\s*" for c in term]) + r"(?!\w)"
 
-def clear_all():
-    keys = (
-        ['uploaded_file'] +
-        [f'term{i}' for i in range(1, 11)] +
-        ['custom_filename', 'download_bytes', 'download_filename']
-    )
-    for k in keys:
-        st.session_state.pop(k, None)
+# Inizializza lo stato per input e uploader
+if 'uploader_key' not in st.session_state:
+    st.session_state['uploader_key'] = 0
+for i in range(1, 11):
+    st.session_state.setdefault(f'term{i}', '')
+st.session_state.setdefault('custom_filename', 'filtered_results')
+st.session_state.setdefault('download_bytes', b'')
+st.session_state.setdefault('download_filename', '')
 
-# --- UI ---
+def clear_all():
+    # Svuota TUTTI i campi delle celle
+    for i in range(1, 11):
+        st.session_state[f'term{i}'] = ''
+    # Svuota filename e download
+    st.session_state['custom_filename'] = ''
+    st.session_state['download_bytes'] = b''
+    st.session_state['download_filename'] = ''
+    # Resetta anche il file uploader
+    st.session_state['uploader_key'] += 1
+
+# ------------ UI ------------
 st.title("Search App:")
 
-st.markdown(
-    """
+st.markdown("""
 **ℹ️ How to use::**
 - Upload an Excel file (.xlsx or .xls).
 - Enter up to **10** search terms or phrases.
 - Choose the final output filename.
 - Click **Search and Download** to get the filtered Excel + report.
-"""
+""")
+
+# Clear: svuota tutto e ricarica la pagina per riflettere subito i cambi
+if st.button("Clear cache and data"):
+    clear_all()
+    st.rerun()
+
+# Uploader con chiave variabile per poterlo resettare
+uploaded_file = st.file_uploader(
+    "Choose an Excel file", type=["xlsx", "xls"],
+    key=f'uploaded_file_{st.session_state["uploader_key"]}'
 )
 
-st.button("Clear cache and data", on_click=clear_all)
+# Inputs vincolati allo stato (così si possono svuotare)
+for i in range(1, 11):
+    st.text_input(f"Term {i}", key=f'term{i}')
+custom_filename = st.text_input("Output filename", key="custom_filename")
 
-uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"], key='uploaded_file')
-terms = [st.text_input(f"Term {i}", key=f"term{i}") for i in range(1, 11)]
-terms = [t.strip() for t in terms if t and t.strip()]
-custom_filename = st.text_input("Output filename", value="filtered_results", key="custom_filename")
-
-# --- BLOCCO AZIONE: genera il file e salva in sessione ---
+# ------------ Azione: cerca e prepara il file ------------
 if st.button("Search and Download"):
+    # Costruisci lista termini puliti
+    terms = [st.session_state[f'term{i}'].strip() for i in range(1, 11) if st.session_state[f'term{i}'].strip()]
+
     if not uploaded_file:
         st.error("Please upload a file first.")
         st.stop()
@@ -127,24 +148,24 @@ if st.button("Search and Download"):
     st.success(f"Matched {matched} rows out of ~{total} scanned.")
     st.dataframe(report_df, use_container_width=True)
 
-    # crea buffer e SALVA IN SESSIONE (così il bottone resta)
+    # Buffer -> salva in sessione per tenere il bottone
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         result_df.to_excel(writer, sheet_name="Filtered", index=False)
         report_df.to_excel(writer, sheet_name="Report", index=False)
     buf.seek(0)
 
-    safe_name = re.sub(r'[<>:"/\\\\|?*]', '_', custom_filename.strip()) or "filtered_results"
+    safe_name = re.sub(r'[<>:"/\\\\|?*]', '_', (st.session_state['custom_filename'] or '').strip()) or "filtered_results"
     st.session_state['download_bytes'] = buf.getvalue()
     st.session_state['download_filename'] = f"{safe_name}.xlsx"
 
-# --- SEZIONE PERSISTENTE: mostra il download button se c'è un file pronto ---
-if 'download_bytes' in st.session_state and st.session_state['download_bytes']:
+# ------------ Download persistente ------------
+if st.session_state.get('download_bytes'):
     st.download_button(
         "Download filtered Excel + report",
         data=st.session_state['download_bytes'],
-        file_name=st.session_state.get('download_filename', "filtered_results.xlsx"),
+        file_name=st.session_state['download_filename'] or "filtered_results.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="download_btn",  # chiave fissa per non farlo scomparire
+        key="download_btn",
         use_container_width=True
     )
