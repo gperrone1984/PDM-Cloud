@@ -230,27 +230,12 @@ def save_binary_file(path, data):
     with open(path, 'wb') as f:
         f.write(data)
 
-def process_and_save_trimmed_image(image_bytes, dest_path, square=False):
+def process_and_save_trimmed_image(image_bytes, dest_path):
     """
     Trimma i bordi bianchi e salva come JPEG.
-    Se square=True, centra su canvas 1000x1000 (bianco) per standardizzare.
     """
     img = Image.open(BytesIO(image_bytes))
     img = trim(img)
-
-    if square:
-        w, h = img.size
-        if w == 0 or h == 0:
-            w, h = 1, 1
-        scale = min(1000 / w, 1000 / h)
-        new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
-        img_resized = img.resize(new_size, Image.LANCZOS)
-        canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
-        x = (1000 - new_size[0]) // 2
-        y = (1000 - new_size[1]) // 2
-        canvas.paste(img_resized, (x, y))
-        img = canvas
-
     img = img.convert("RGB")
     img.save(dest_path, "JPEG", quality=100)
 
@@ -286,7 +271,7 @@ async def async_get_image_with_fallback(product_code, session):
     return None, None
 
 # ---------------------- Main Processing Function ----------------------
-async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal", square_mixed=False):
+async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal"):
     session_id = st.session_state["bundle_creator_session_id"]
     base_folder = f"Bundle&Set_{session_id}"
     missing_images_excel_path = f"missing_images_{session_id}.xlsx"
@@ -476,15 +461,15 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 suffix = f"-p{lang}"
                             file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
                             # TRIM & SAVE
-                            await asyncio.to_thread(process_and_save_trimmed_image, image_data, file_path, square_mixed)
+                            await asyncio.to_thread(process_and_save_trimmed_image, image_data, file_path)
                             processed_keys.append(lang)
                         # Duplicate missing language if only one is available
                         if "1-fr" not in processed_keys and "1-nl" in processed_keys:
                             file_path_dup = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
-                            await asyncio.to_thread(process_and_save_trimmed_image, result["1-nl"], file_path_dup, square_mixed)
+                            await asyncio.to_thread(process_and_save_trimmed_image, result["1-nl"], file_path_dup)
                         elif "1-nl" not in processed_keys and "1-fr" in processed_keys:
                             file_path_dup = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
-                            await asyncio.to_thread(process_and_save_trimmed_image, result["1-fr"], file_path_dup, square_mixed)
+                            await asyncio.to_thread(process_and_save_trimmed_image, result["1-fr"], file_path_dup)
 
                     elif result:
                         prod_folder = bundle_folder
@@ -496,13 +481,13 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             file_path_nl = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
                             file_path_fr = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
                             # TRIM & SAVE both
-                            await asyncio.to_thread(process_and_save_trimmed_image, result, file_path_nl, square_mixed)
-                            await asyncio.to_thread(process_and_save_trimmed_image, result, file_path_fr, square_mixed)
+                            await asyncio.to_thread(process_and_save_trimmed_image, result, file_path_nl)
+                            await asyncio.to_thread(process_and_save_trimmed_image, result, file_path_fr)
                         else:
                             suffix = f"-p{used_ext}" if used_ext else "-h1"
                             file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
                             # TRIM & SAVE
-                            await asyncio.to_thread(process_and_save_trimmed_image, result, file_path, square_mixed)
+                            await asyncio.to_thread(process_and_save_trimmed_image, result, file_path)
                     else:
                         error_list.append((bundle_code, p_code))
 
@@ -599,10 +584,9 @@ st.markdown(
        - File Type: **CSV** or **Excel** - All Attributes or Grid Context (for Grid Context, select ID and PZN included in the set) - **With Codes** - **Without Media**
     3. **Choose the language for language specific photos:** (if needed)
     4. **Choose bundle layout:** (Horizontal, Vertical, or Automatic)
-    5. **(Optional)**: for **mixed sets**, enable **Square 1000×1000** if you want fixed-size outputs after trimming.
-    6. Click **Process CSV** to start the process.
-    7. Download the files.
-    8. **Before starting a new process, click on Clear Cache and Reset Data.**
+    5. Click **Process File** to start the process.
+    6. Download the files.
+    7. **Before starting a new process, click on Clear Cache and Reset Data.**
     """
 )
 
@@ -611,8 +595,7 @@ if st.button("🧹 Clear Cache and Reset Data"):
         "bundle_creator_session_id", "encryption_key", "fallback_ext",
         "zip_data", "bundle_list_data", "missing_images_data",
         "missing_images_df", "processing_complete_bundle",
-        "file_uploader", "preview_pzn_bundle", "sidebar_ext_bundle",
-        "square_mixed_images"
+        "file_uploader", "preview_pzn_bundle", "sidebar_ext_bundle"
     ]
     for key in keys_to_remove:
         if key in st.session_state:
@@ -698,20 +681,12 @@ if show_image and product_code_preview:
         st.sidebar.error(f"Failed to fetch image (Status: {fetch_status_code}) for {product_code_preview} with -p{selected_extension}.jpg")
 
 uploaded_file = st.file_uploader("**Upload CSV File**", type=["csv", "xlsx"], key="file_uploader")
-square_mixed_images = False
 if uploaded_file is not None:
     col1, col2 = st.columns(2)
     with col1:
         fallback_language = st.selectbox("**Choose the language for language specific photos:**", options=["None", "FR", "DE", "NL FR"], index=0, key="lang_select_bundle")
     with col2:
         layout_choice = st.selectbox("**Choose bundle layout:**", options=["Automatic", "Horizontal", "Vertical"], index=0, key="layout_select_bundle")
-
-    square_mixed_images = st.checkbox(
-        "Square 1000×1000 for mixed-set images (after trimming)",
-        value=False,
-        help="Se attivo, dopo il trim le immagini dei set misti vengono centrate su canvas 1000×1000."
-    )
-    st.session_state["square_mixed_images"] = square_mixed_images
 
     if fallback_language == "NL FR":
         st.session_state["fallback_ext"] = "NL FR"
@@ -721,7 +696,7 @@ if uploaded_file is not None:
         if "fallback_ext" in st.session_state:
             del st.session_state["fallback_ext"]
 
-    if st.button("Process CSV", key="process_csv_bundle"):
+    if st.button("Process File", key="process_csv_bundle"):
         start_time = time.time()
         progress_bar = st.progress(0, text="Starting processing...")
         st.session_state["zip_data"] = None
@@ -734,7 +709,7 @@ if uploaded_file is not None:
                 st.error("Critical error: Processing function is not defined.")
                 st.stop()
             zip_data, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
-                process_file_async(uploaded_file, progress_bar, layout=layout_choice, square_mixed=square_mixed_images)
+                process_file_async(uploaded_file, progress_bar, layout=layout_choice)
             )
             progress_bar.progress(1.0, text="Processing Complete!")
             elapsed_time = time.time() - start_time
