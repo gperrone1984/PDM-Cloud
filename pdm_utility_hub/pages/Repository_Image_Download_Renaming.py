@@ -103,12 +103,12 @@ st.markdown(
       margin-left: 0 !important;
    }
 
-   /* --- Nasconde la freccia quando la sidebar è chiusa --- */
+   /* Nasconde la freccia */
    .hidden-toggle {
       display: none !important;
    }
 
-   /* --- Stili esistenti per i pulsanti e layout (mantieni tutto il resto del tuo stile) --- */
+   /* --- Stili app (mantieni i tuoi colori e pulsanti) --- */
    .app-container {
       display: flex;
       flex-direction: column;
@@ -151,7 +151,18 @@ st.markdown(
        color: #868e96;
        border: 1px dashed #cccccc;
    }
-    </style>
+   .app-button-placeholder .icon {
+       font-size: 1.5em;
+   }
+   .app-description {
+       font-size: 0.9em;
+       color: #343a40;
+       padding: 0 15px;
+       text-align: justify;
+       width: 90%;
+       margin: 0 auto;
+   }
+   </style>
     """,
     unsafe_allow_html=True
 )
@@ -172,48 +183,19 @@ const wait = setInterval(() => {
     clearInterval(wait);
 
     toggleBtn.addEventListener("click", () => {
-      // Se la sidebar è aperta → chiudi e sposta contenuto
+      // Se sidebar aperta → chiudi completamente e sposta finestra a sinistra
       if (!sidebar.classList.contains("sidebar-closed")) {
         sidebar.classList.add("sidebar-closed");
         toggleBtn.classList.add("hidden-toggle");
         appContainer.style.marginLeft = "0";
       } 
-      // Se è chiusa → riapri e ripristina contenuto
+      // Se è chiusa → riapri e riporta finestra a destra
       else {
         sidebar.classList.remove("sidebar-closed");
         setTimeout(() => {
           toggleBtn.classList.remove("hidden-toggle");
           appContainer.style.marginLeft = "540px";
         }, 400);
-      }
-    });
-  }
-}, 500);
-</script>
-""", unsafe_allow_html=True)
-
-# --- Script: chiudi completamente la sidebar ---
-st.markdown("""
-<script>
-const wait = setInterval(() => {
-  const sidebar = window.parent.document.querySelector('aside[data-testid="stSidebar"]');
-  const toggleBtn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
-  
-  if (sidebar && toggleBtn) {
-    clearInterval(wait);
-
-    toggleBtn.addEventListener("click", () => {
-      // Se sidebar aperta → chiudi completamente e nascondi freccia
-      if (!sidebar.classList.contains("sidebar-closed")) {
-        sidebar.classList.add("sidebar-closed");
-        toggleBtn.classList.add("hidden-toggle");
-      } 
-      // Se sidebar chiusa → riapri e mostra di nuovo la freccia
-      else {
-        sidebar.classList.remove("sidebar-closed");
-        setTimeout(() => {
-          toggleBtn.classList.remove("hidden-toggle");
-        }, 400); // riappare con leggero ritardo
       }
     });
   }
