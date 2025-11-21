@@ -20,7 +20,7 @@ st.markdown("""
     display: none !important;
 }
 
-/* --- Contenitore principale della sidebar --- */
+/* Sidebar: impostazioni base */
 [data-testid="stSidebar"] {
     width: 550px !important;
     min-width: 550px !important;
@@ -32,10 +32,11 @@ st.markdown("""
     z-index: 9999 !important;
 }
 
-/* --- Stato chiuso: sposta completamente fuori lo schermo --- */
+/* Quando la sidebar è chiusa — sparisce completamente */
 .sidebar-closed {
-    margin-left: -550px !important;
-    transform: translateX(-100%) !important;
+    transform: translateX(-120%) !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
 }
 
 /* Sfondo principale */
@@ -48,6 +49,11 @@ div[data-testid="stAppViewContainer"] > section > div.block-container {
     padding: 2rem 1rem 1rem 1rem !important;
     border-radius: 0 !important;
 }
+
+/* Nasconde completamente la freccia quando la sidebar è chiusa */
+.hidden-toggle {
+    display: none !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -58,22 +64,29 @@ st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
 # =========================
-# 4) Script: chiusura totale
+# 4) Script JS: chiusura TOTALE
 # =========================
 st.markdown("""
 <script>
 const wait = setInterval(() => {
   const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-  const toggleBtn = window.parent.document.querySelector('button[data-testid="collapsedControl"]');
-
+  const toggleBtn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
+  
   if (sidebar && toggleBtn) {
     clearInterval(wait);
 
     toggleBtn.addEventListener("click", () => {
-      if (sidebar.classList.contains("sidebar-closed")) {
-        sidebar.classList.remove("sidebar-closed");
-      } else {
+      // Se sidebar aperta → chiudi completamente e nascondi freccia
+      if (!sidebar.classList.contains("sidebar-closed")) {
         sidebar.classList.add("sidebar-closed");
+        toggleBtn.classList.add("hidden-toggle");
+      } 
+      // Se sidebar chiusa → riapri e mostra di nuovo freccia
+      else {
+        sidebar.classList.remove("sidebar-closed");
+        setTimeout(() => {
+          toggleBtn.classList.remove("hidden-toggle");
+        }, 400); // leggero ritardo per riapparizione fluida
       }
     });
   }
