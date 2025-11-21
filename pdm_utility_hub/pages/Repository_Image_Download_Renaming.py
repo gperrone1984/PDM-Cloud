@@ -49,10 +49,10 @@ st.set_page_config(
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# --- CSS globale e comportamento sidebar ---
+# --- CSS globale + comportamento sidebar e sfondo bianco ---
 st.markdown("""
 <style>
-/* === BASE SIDEBAR === */
+/* ========== SIDEBAR ========== */
 aside[data-testid="stSidebar"] {
     background-color: #f2f3f5 !important;
     width: 540px !important;
@@ -63,11 +63,9 @@ aside[data-testid="stSidebar"] {
     transition: all 0.5s ease-in-out !important;
     z-index: 9999 !important;
 }
-
-/* Nasconde la navigazione automatica di Streamlit */
 [data-testid="stSidebarNav"] { display: none !important; }
 
-/* === SIDEBAR CHIUSA === */
+/* Sidebar chiusa: completamente invisibile */
 aside[data-testid="stSidebar"].sidebar-closed {
     transform: translateX(-100%) !important;
     opacity: 0 !important;
@@ -80,48 +78,47 @@ aside[data-testid="stSidebar"].sidebar-closed {
     box-shadow: none !important;
 }
 
-/* Nasconde la freccia quando sidebar chiusa */
+/* Nasconde la freccia */
 .hidden-toggle {
     display: none !important;
 }
 
-/* === CONTENUTO PRINCIPALE === */
-div[data-testid="stAppViewContainer"] {
-    transition: all 0.5s ease-in-out !important;
-    margin-left: 540px !important; /* posizione normale con sidebar */
-}
+/* ========== CONTENUTO PRINCIPALE ========== */
 
-/* Sposta tutto a sinistra quando sidebar chiusa */
+/* Sposta a sinistra quando sidebar chiusa */
+div[data-testid="stAppViewContainer"] {
+    transition: margin-left 0.5s ease-in-out !important;
+    margin-left: 540px !important; /* posizione con sidebar aperta */
+    background-color: white !important;  /* area centrale bianca */
+}
 .sidebar-closed ~ div[data-testid="stAppViewContainer"] {
     margin-left: 0 !important;
+    background-color: white !important;
 }
 
-/* === RIMUOVE OGNI ZONA BIANCA === */
-html, body, #root {
-    background-color: #f2f3f5 !important;
+/* Sezioni e blocchi interni con sfondo bianco */
+section.main, div.block-container,
+div[data-testid="stMainBlockContainer"],
+div[data-testid="stVerticalBlock"] {
+    background-color: white !important;
+    margin: 0 !important;
+    padding: 0 2rem !important;
+}
+
+/* ========== RIMOZIONE ZONE BIANCHE LATERALI ========== */
+html, body, #root, div[data-testid="stApp"] {
+    background-color: #f2f3f5 !important; /* grigio solo attorno */
     margin: 0 !important;
     padding: 0 !important;
     overflow-x: hidden !important;
 }
-
-section.main, div.block-container {
-    background-color: #f2f3f5 !important;
-    padding: 0 !important;
-    margin: 0 !important;
+div[data-testid="stDecoration"], header[data-testid="stHeader"] {
+    display: none !important;
 }
 
-div[data-testid="stApp"] {
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-}
-
-div[data-testid="stApp"] > div:first-child,
-div[data-testid="stDecoration"],
-div[data-testid="stMainBlockContainer"],
-div[data-testid="stVerticalBlock"] {
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-    background-color: #f2f3f5 !important;
+/* ========== TRANSIZIONE FLUIDA ========== */
+.main .block-container {
+    transition: all 0.5s ease-in-out !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -130,7 +127,7 @@ div[data-testid="stVerticalBlock"] {
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
-# --- Script per chiusura completa e shift totale a sinistra ---
+# --- Script per chiusura totale e shift completo a sinistra ---
 st.markdown("""
 <script>
 const wait = setInterval(() => {
@@ -147,13 +144,15 @@ const wait = setInterval(() => {
         sidebar.classList.add("sidebar-closed");
         toggleBtn.classList.add("hidden-toggle");
         appContainer.style.marginLeft = "0";
+        appContainer.style.backgroundColor = "white";
       } 
-      // Sidebar chiusa → riapri e ripristina
+      // Sidebar chiusa → riapri e ripristina posizione
       else {
         sidebar.classList.remove("sidebar-closed");
         setTimeout(() => {
           toggleBtn.classList.remove("hidden-toggle");
           appContainer.style.marginLeft = "540px";
+          appContainer.style.backgroundColor = "white";
         }, 400);
       }
     });
