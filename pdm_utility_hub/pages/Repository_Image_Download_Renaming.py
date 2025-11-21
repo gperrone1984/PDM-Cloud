@@ -49,87 +49,72 @@ st.set_page_config(
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# --- CSS Globale per sidebar e contenuto ---
-st.markdown(
-    """
-    <style>
-   [data-testid="stSidebar"] {
-      background-color: #f2f3f5 !important;
-      width: 540px !important;
-      min-width: 540px !important;
-      max-width: 540px !important;
-      height: 100vh !important;
-      position: sticky !important;
-      top: 0 !important;
-      overflow-y: auto !important;
-      border-right: 1px solid rgba(0,0,0,0.06);
-      transition: all 0.5s ease-in-out !important;
-      z-index: 9999 !important;
-   }
+# --- CSS Globale + comportamento completo ---
+st.markdown("""
+<style>
+/* Sidebar base */
+aside[data-testid="stSidebar"] {
+    background-color: #f2f3f5 !important;
+    width: 540px !important;
+    min-width: 540px !important;
+    max-width: 540px !important;
+    height: 100vh !important;
+    border-right: 1px solid rgba(0,0,0,0.06);
+    transition: all 0.5s ease-in-out !important;
+    z-index: 9999 !important;
+}
+[data-testid="stSidebarNav"] { display: none !important; }
 
-   [data-testid="stSidebar"] > div:first-child {
-      background-color: #f2f3f5 !important;
-      height: 100vh !important;
-      overflow-y: auto !important;
-      position: sticky !important;
-      top: 0 !important;
-   }
+/* Contenitore principale: si muove con la sidebar */
+div[data-testid="stAppViewContainer"] {
+    transition: margin-left 0.5s ease-in-out !important;
+    margin-left: 540px !important;
+}
 
-   /* Nasconde la navigazione automatica generata da Streamlit nella sidebar */
-   [data-testid="stSidebarNav"] {
-       display: none !important;
-   }
+/* Rimuove lo spazio bianco a sinistra del layout */
+div[data-testid="stMainBlockContainer"], div[data-testid="stVerticalBlock"] {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+}
 
-   /* Contenitore principale dell'app */
-   div[data-testid="stAppViewContainer"] {
-       transition: margin-left 0.5s ease-in-out !important;
-       margin-left: 540px !important; /* posizione con sidebar aperta */
-   }
+/* Sidebar chiusa: completamente invisibile */
+aside[data-testid="stSidebar"].sidebar-closed {
+    margin-left: -600px !important;
+    transform: translateX(-100%) !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+}
 
-   /* Chiusura completa sidebar */
-   aside[data-testid="stSidebar"].sidebar-closed {
-       margin-left: -600px !important;
-       transform: translateX(-100%) !important;
-       opacity: 0 !important;
-       visibility: hidden !important;
-       width: 0 !important;
-       min-width: 0 !important;
-       max-width: 0 !important;
-       padding: 0 !important;
-       border: none !important;
-       box-shadow: none !important;
-   }
+/* Contenuto principale a piena larghezza quando sidebar chiusa */
+.sidebar-closed ~ div[data-testid="stAppViewContainer"] {
+    margin-left: 0 !important;
+}
 
-   /* Quando sidebar chiusa → sposta contenuto principale */
-   .sidebar-closed ~ div[data-testid="stAppViewContainer"] {
-       margin-left: 0 !important;
-   }
+/* Nasconde la freccia */
+.hidden-toggle {
+    display: none !important;
+}
 
-   /* Nasconde la freccia quando sidebar chiusa */
-   .hidden-toggle {
-       display: none !important;
-   }
-
-   /* Imposta trasparenza e padding blocchi principali */
-   div[data-testid="stAppViewContainer"] > section > div.block-container {
-        background-color: transparent !important;
-        padding: 2rem 1rem 1rem 1rem !important;
-   }
-   .main .block-container {
-        background-color: transparent !important;
-        padding: 2rem 1rem 1rem 1rem !important;
-   }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+/* Styling base del corpo */
+.main .block-container,
+div[data-testid="stAppViewContainer"] > section > div.block-container {
+    background-color: transparent !important;
+    padding: 2rem 1rem 1rem 1rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # --- Bottone nella sidebar ---
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
-
-# --- Script JS: chiusura completa e shift a sinistra ---
+# --- Script per chiusura totale e spostamento dinamico ---
 st.markdown("""
 <script>
 const wait = setInterval(() => {
@@ -141,14 +126,11 @@ const wait = setInterval(() => {
     clearInterval(wait);
 
     toggleBtn.addEventListener("click", () => {
-      // Se sidebar aperta → chiudi e sposta contenuto a sinistra
       if (!sidebar.classList.contains("sidebar-closed")) {
         sidebar.classList.add("sidebar-closed");
         toggleBtn.classList.add("hidden-toggle");
         appContainer.style.marginLeft = "0";
-      } 
-      // Se sidebar chiusa → riapri e ripristina contenuto
-      else {
+      } else {
         sidebar.classList.remove("sidebar-closed");
         setTimeout(() => {
           toggleBtn.classList.remove("hidden-toggle");
@@ -160,7 +142,6 @@ const wait = setInterval(() => {
 }, 500);
 </script>
 """, unsafe_allow_html=True)
-
 
 # ----- Sidebar Content -----
 st.sidebar.markdown("<div class='sidebar-title'>PDM Image Download and Renaming App</div>", unsafe_allow_html=True)
