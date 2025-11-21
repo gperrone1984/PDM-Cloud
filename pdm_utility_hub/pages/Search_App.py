@@ -11,31 +11,19 @@ st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-import streamlit as st
-
-import streamlit as st
-
-# ========== 1) CSS generale ==========
+# 2) CSS: sidebar solo con PDM Hub
 st.markdown("""
 <style>
-/* --- Nasconde il menu automatico della sidebar --- */
 [data-testid="stSidebarNav"] {
     display: none !important;
 }
-
-/* --- Personalizzazione della sidebar --- */
-[data-testid="stSidebar"] {
+[data-testid="stSidebar"] > div:first-child {
     width: 550px !important;
     min-width: 550px !important;
     max-width: 550px !important;
     background-color: #ecf0f1 !important;
     padding: 10px !important;
-    transition: all 0.4s ease-in-out !important;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
-    z-index: 9999 !important;
 }
-
-/* --- Contenitore principale --- */
 section.main {
     background-color: #d8dfe6 !important;
 }
@@ -45,53 +33,12 @@ div[data-testid="stAppViewContainer"] > section > div.block-container {
     padding: 2rem 1rem 1rem 1rem !important;
     border-radius: 0 !important;
 }
-
-/* --- Stile del pulsante freccia --- */
-button[data-testid="collapsedControl"] {
-    background-color: #f39c12 !important;
-    border-radius: 50% !important;
-    box-shadow: 0 0 6px rgba(0,0,0,0.3);
-    transition: all 0.3s ease-in-out !important;
-}
-button[data-testid="collapsedControl"]:hover {
-    background-color: #e67e22 !important;
-    transform: scale(1.15);
-}
-
-/* --- Transizione per nascondere completamente la sidebar --- */
-.sidebar-hidden {
-    transform: translateX(-100%) !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
-
-# ========== 2) Sidebar ==========
+# 3) Sidebar: SOLO il bottone richiesto
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
-
-
-# ========== 3) Script per chiusura totale e animata ==========
-st.markdown("""
-<script>
-const interval = setInterval(() => {
-  const btn = window.parent.document.querySelector('button[data-testid="collapsedControl"]');
-  const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-  if (btn && sidebar) {
-    clearInterval(interval);
-
-    btn.addEventListener('click', () => {
-      if (sidebar.classList.contains('sidebar-hidden')) {
-        sidebar.classList.remove('sidebar-hidden');
-      } else {
-        sidebar.classList.add('sidebar-hidden');
-      }
-    });
-  }
-}, 500);
-</script>
-""", unsafe_allow_html=True)
-
 
 # ------------ Helpers & State ------------
 
