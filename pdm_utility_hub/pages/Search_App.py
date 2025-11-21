@@ -1,124 +1,122 @@
+# pages/Search_App.py
 import streamlit as st
-import openpyxl
+import pandas as pd
 import re
 import unicodedata
 from io import BytesIO
-import pandas as pd
 
-# ---------- Page config ----------
-st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
-# Per partire con sidebar chiusa, decommenta:
-# st.set_page_config(initial_sidebar_state="collapsed")
+# 1) Page config (MUST be first)
+st.set_page_config(
+    page_title="Search App",
+    page_icon="🔎",
+    layout="centered",
+    # initial_sidebar_state="expanded",  # default
+)
 
-# ---------- CSS + JS (toggle testuale + sidebar full-hide) ----------
-st.markdown("""
-<style>
-/* ===== Look generale ===== */
-section.main { background-color: #d8dfe6 !important; }
-.main .block-container,
-div[data-testid="stAppViewContainer"] > section > div.block-container {
-  background-color: transparent !important;
-  padding: 2rem 1rem 1rem 1rem !important;
-  border-radius: 0 !important;
-}
+# 2) Authentication check
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.switch_page("app.py")
 
-/* Sidebar aperta: larghezze/stile */
-[data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
-  width: 550px !important;
-  min-width: 550px !important;
-  max-width: 550px !important;
-  background-color: #ecf0f1 !important;
-  padding: 10px !important;
-}
-/* Nascondi la nav interna che non ti serve */
-[data-testid="stSidebarNav"] { display: none !important; }
+# 3) Global CSS + JS
+st.markdown(
+    """
+    <style>
+      /* Nascondi la nav di Streamlit dentro la sidebar (resta solo ciò che metti tu) */
+      [data-testid="stSidebarNav"] { display: none !important; }
 
-/* Sidebar chiusa: sparisce COMPLETAMENTE */
-[data-testid="stSidebar"][aria-expanded="false"] {
-  transform: translateX(-100%) !important;
-  width: 0 !important; min-width: 0 !important; max-width: 0 !important;
-  margin: 0 !important; padding: 0 !important; border: 0 !important;
-  overflow: hidden !important;
-}
-[data-testid="stSidebar"][aria-expanded="false"] * {
-  pointer-events: none !important;
-}
-
-/* ===== Toggle nativo: trasformalo in bottone testuale fisso ===== */
-/* Nascondi l'icona */
-header button[title="Toggle sidebar"] svg,
-header button[aria-label="Toggle sidebar"] svg,
-header button[data-testid="stSidebarCollapseButton"] svg {
-  display: none !important;
-}
-/* Sposta e stile del bottone */
-header button[title="Toggle sidebar"],
-header button[aria-label="Toggle sidebar"],
-header button[data-testid="stSidebarCollapseButton"] {
-  position: fixed !important;
-  top: 18px !important;
-  right: 24px !important;
-  z-index: 9999 !important;
-  padding: 8px 12px !important;
-  border-radius: 10px !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,.08) !important;
-  white-space: nowrap !important;
-}
-
-/* Testo di default (sidebar chiusa) */
-header button[title="Toggle sidebar"]::after,
-header button[aria-label="Toggle sidebar"]::after,
-header button[data-testid="stSidebarCollapseButton"]::after {
-  content: "Click to expand";
-  font-weight: 600;
-  font-size: 0.9rem;
-  letter-spacing: .2px;
-}
-
-/* Quando <html> porta data-sidebar="open" mostra "collapse" */
-html[data-sidebar="open"] header button[title="Toggle sidebar"]::after,
-html[data-sidebar="open"] header button[aria-label="Toggle sidebar"]::after,
-html[data-sidebar="open"] header button[data-testid="stSidebarCollapseButton"]::after {
-  content: "Click to collapse";
-}
-</style>
-
-<!-- JS: osserva lo stato della sidebar e aggiorna data-sidebar su <html> -->
-<script>
-(function () {
-  function setFlag() {
-    var sb = document.querySelector('[data-testid="stSidebar"]');
-    if (!sb) return;
-    var expanded = sb.getAttribute('aria-expanded') === 'true';
-    document.documentElement.setAttribute('data-sidebar', expanded ? 'open' : 'closed');
-  }
-  function initObserver() {
-    setFlag();
-    var sb = document.querySelector('[data-testid="stSidebar"]');
-    if (!sb) return;
-    var mo = new MutationObserver(function(muts){
-      for (var m of muts) {
-        if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setFlag();
+      /* Tema main */
+      section.main { background-color: #d8dfe6 !important; }
+      .main .block-container,
+      div[data-testid="stAppViewContainer"] > section > div.block-container {
+          background-color: transparent !important;
+          padding: 2rem 1rem 1rem 1rem !important;
+          border-radius: 0 !important;
       }
-    });
-    mo.observe(sb, { attributes: true });
-  }
-  var tries = 0, iv = setInterval(function(){
-    tries++;
-    if (document.querySelector('[data-testid="stSidebar"]')) {
-      clearInterval(iv); initObserver();
-    }
-    if (tries > 50) clearInterval(iv);
-  }, 200);
-  window.addEventListener('load', setFlag);
-})();
-</script>
-""", unsafe_allow_html=True)
 
-# ---------- Sidebar contenuti ----------
-with st.sidebar:
-  st.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
-  st.markdown("---")
+      /* --- Sidebar chiusa: rimuovi ogni traccia --- */
+      [data-testid="stSidebar"][aria-expanded="false"] {
+          transform: translateX(-100%) !important;
+          width: 0 !important; min-width: 0 !important; max-width: 0 !important;
+          margin: 0 !important; padding: 0 !important; border: 0 !important;
+          overflow: hidden !important;
+      }
+      [data-testid="stSidebar"][aria-expanded="false"] * {
+          pointer-events: none !important;
+      }
+
+      /* --- Toggle nativo: mantieni le frecce e aggiungi il testo accanto --- */
+      header button[title="Toggle sidebar"],
+      header button[aria-label="Toggle sidebar"],
+      header button[data-testid="stSidebarCollapseButton"] {
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: 8px !important;         /* spazio tra frecce e testo */
+          white-space: nowrap !important;
+      }
+      /* Ingrandisci un filo le frecce per maggiore visibilità */
+      header button[title="Toggle sidebar"] svg,
+      header button[aria-label="Toggle sidebar"] svg,
+      header button[data-testid="stSidebarCollapseButton"] svg {
+          width: 18px !important;
+          height: 18px !important;
+          opacity: 1 !important;
+      }
+
+      /* Testo quando la sidebar è CHIUSA */
+      html[data-sidebar="closed"] header button[title="Toggle sidebar"]::after,
+      html[data-sidebar="closed"] header button[aria-label="Toggle sidebar"]::after,
+      html[data-sidebar="closed"] header button[data-testid="stSidebarCollapseButton"]::after {
+          content: "clicca per espandere";
+          font-weight: 600;
+          font-size: 0.92rem;
+          letter-spacing: .2px;
+      }
+
+      /* Testo quando la sidebar è APERTA */
+      html[data-sidebar="open"] header button[title="Toggle sidebar"]::after,
+      html[data-sidebar="open"] header button[aria-label="Toggle sidebar"]::after,
+      html[data-sidebar="open"] header button[data-testid="stSidebarCollapseButton"]::after {
+          content: "clicca per chiudere";
+          font-weight: 600;
+          font-size: 0.92rem;
+          letter-spacing: .2px;
+      }
+    </style>
+
+    <!-- JS: sincronizza data-sidebar su <html> con lo stato aria-expanded della sidebar -->
+    <script>
+      (function () {
+        function setFlag() {
+          var sb = document.querySelector('[data-testid="stSidebar"]');
+          if (!sb) return;
+          var expanded = sb.getAttribute('aria-expanded') === 'true';
+          document.documentElement.setAttribute('data-sidebar', expanded ? 'open' : 'closed');
+        }
+        function initObserver() {
+          setFlag();
+          var sb = document.querySelector('[data-testid="stSidebar"]');
+          if (!sb) return;
+          new MutationObserver(function(muts){
+            for (var m of muts) {
+              if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setFlag();
+            }
+          }).observe(sb, { attributes: true });
+        }
+        var tries = 0, iv = setInterval(function(){
+          tries++;
+          if (document.querySelector('[data-testid="stSidebar"]')) { clearInterval(iv); initObserver(); }
+          if (tries > 50) clearInterval(iv);
+        }, 200);
+        window.addEventListener('load', setFlag);
+      })();
+    </script>
+    """,
+    unsafe_allow_html=True
+)
+
+# 4) Sidebar
+st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
+st.sidebar.markdown("---")
 
 # ---------- Helpers ----------
 def strip_accents(s):
