@@ -10,21 +10,21 @@ st.set_page_config(
     page_title="Search App",
     page_icon="🔎",
     layout="centered",
-    # initial_sidebar_state="expanded",  # lasciamo il default
+    # initial_sidebar_state="expanded",  # opzionale
 )
 
 # 2) Authentication check
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# 3) Global CSS + JS
+# 3) Global CSS + JS (larghezza 550px aperta, sidebar invisibile da chiusa, bottone testuale visibile)
 st.markdown(
     """
     <style>
-      /* ---- Nascondi la nav interna della sidebar ---- */
+      /* --- Sidebar: tieni solo quello che metti tu --- */
       [data-testid="stSidebarNav"] { display: none !important; }
 
-      /* ---- Sidebar APERTA: larghezza forzata 550px ---- */
+      /* --- Sidebar APERTA: larghezza forzata 550px --- */
       [data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
           width: 550px !important;
           min-width: 550px !important;
@@ -33,7 +33,7 @@ st.markdown(
           padding: 10px !important;
       }
 
-      /* ---- Main look ---- */
+      /* --- Main look --- */
       section.main { background-color: #d8dfe6 !important; }
       .main .block-container,
       div[data-testid="stAppViewContainer"] > section > div.block-container {
@@ -42,7 +42,7 @@ st.markdown(
           border-radius: 0 !important;
       }
 
-      /* ---- Sidebar CHIUSA: scomparsa completa ---- */
+      /* --- Sidebar CHIUSA: scomparsa completa (niente bordino) --- */
       [data-testid="stSidebar"][aria-expanded="false"] {
           transform: translateX(-100%) !important;
           width: 0 !important; min-width: 0 !important; max-width: 0 !important;
@@ -53,108 +53,96 @@ st.markdown(
           pointer-events: none !important;
       }
 
-      /* ====== Toggle nativo personalizzato: SOLO TESTO BEN VISIBILE ====== */
-      /* Nascondi l'icona (frecce) */
-      header button[title="Toggle sidebar"] svg,
-      header button[aria-label="Toggle sidebar"] svg,
-      header button[data-testid="stSidebarCollapseButton"] svg {
-        display: none !important;
-      }
-
-      /* Stile del bottone (posizione e resa) */
+      /* --- Nascondi il pulsante nativo con le frecce (lo sostituiamo noi) --- */
       header button[title="Toggle sidebar"],
       header button[aria-label="Toggle sidebar"],
       header button[data-testid="stSidebarCollapseButton"] {
-        position: fixed !important;
-        top: 16px !important;
-        left: 16px !important;               /* mettilo vicino alla sidebar */
-        z-index: 9999 !important;
-        padding: 10px 14px !important;
-        border-radius: 12px !important;
-        background: #ffffff !important;
-        border: 1px solid rgba(0,0,0,.12) !important;
-        box-shadow: 0 2px 10px rgba(0,0,0,.08) !important;
-        cursor: pointer !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        min-height: 38px !important;
+        display: none !important;
       }
 
-      /* Testo quando la sidebar è CHIUSA */
-      html[data-sidebar="closed"] header button[title="Toggle sidebar"]::after,
-      html[data-sidebar="closed"] header button[aria-label="Toggle sidebar"]::after,
-      html[data-sidebar="closed"] header button[data-testid="stSidebarCollapseButton"]::after {
-        content: "Clicca per aprire";
+      /* === BOTTONE PERSONALIZZATO FISSO === */
+      .sb-toggle-btn {
+        position: fixed;
+        top: 16px;
+        left: 16px;               /* mettilo a destra cambiando in right:16px; e togli left */
+        z-index: 99999;
+        background: #ffffff;
+        color: #1f2937;
+        border: 1px solid rgba(0,0,0,.15);
+        border-radius: 12px;
+        padding: 10px 14px;
         font-weight: 700;
         font-size: 0.98rem;
-        color: #1f2937;
+        line-height: 1;
         letter-spacing: .2px;
-        white-space: nowrap;
+        box-shadow: 0 4px 12px rgba(0,0,0,.10);
+        cursor: pointer;
+        user-select: none;
       }
-
-      /* Testo quando la sidebar è APERTA */
-      html[data-sidebar="open"] header button[title="Toggle sidebar"]::after,
-      html[data-sidebar="open"] header button[aria-label="Toggle sidebar"]::after,
-      html[data-sidebar="open"] header button[data-testid="stSidebarCollapseButton"]::after {
-        content: "Clicca per chiudere";
-        font-weight: 700;
-        font-size: 0.98rem;
-        color: #1f2937;
-        letter-spacing: .2px;
-        white-space: nowrap;
-      }
-
-      /* Hover/Focus: più evidente */
-      header button[title="Toggle sidebar"]:hover,
-      header button[aria-label="Toggle sidebar"]:hover,
-      header button[data-testid="stSidebarCollapseButton"]:hover {
-        box-shadow: 0 4px 14px rgba(0,0,0,.14) !important;
+      .sb-toggle-btn:hover {
+        box-shadow: 0 6px 16px rgba(0,0,0,.14);
         transform: translateY(-1px);
       }
-
-      /* Mobile: se lo spazio è poco, riduci il testo ma resta visibile */
+      /* su schermi piccoli riduci un po' */
       @media (max-width: 480px) {
-        html[data-sidebar] header button[title="Toggle sidebar"]::after,
-        html[data-sidebar] header button[aria-label="Toggle sidebar"]::after,
-        html[data-sidebar] header button[data-testid="stSidebarCollapseButton"]::after {
-          font-size: 0.86rem;
-        }
+        .sb-toggle-btn { font-size: 0.9rem; padding: 8px 12px; }
       }
     </style>
 
-    <!-- JS: sincronizza data-sidebar="open|closed" con aria-expanded -->
+    <!-- HTML del bottone + JS che simula il click sulle frecce native -->
+    <div id="sbToggle" class="sb-toggle-btn">Caricamento…</div>
     <script>
       (function () {
-        function setFlag() {
-          var sb = document.querySelector('[data-testid="stSidebar"]');
+        var btn = document.getElementById('sbToggle');
+
+        function findNativeToggle() {
+          return document.querySelector('header button[title="Toggle sidebar"], header button[aria-label="Toggle sidebar"], header button[data-testid="stSidebarCollapseButton"]');
+        }
+        function getSidebar() {
+          return document.querySelector('[data-testid="stSidebar"]');
+        }
+        function setLabel() {
+          var sb = getSidebar();
           if (!sb) return;
           var expanded = sb.getAttribute('aria-expanded') === 'true';
-          document.documentElement.setAttribute('data-sidebar', expanded ? 'open' : 'closed');
+          btn.textContent = expanded ? 'Clicca per chiudere' : 'Clicca per aprire';
         }
-        function initObserver() {
-          setFlag();
-          var sb = document.querySelector('[data-testid="stSidebar"]');
+
+        // click del nostro bottone => clicca il toggle nativo
+        btn.addEventListener('click', function() {
+          var nativeBtn = findNativeToggle();
+          if (nativeBtn) nativeBtn.click();
+        });
+
+        // osserva cambi di stato della sidebar per aggiornare l’etichetta
+        function observeSidebar() {
+          var sb = getSidebar();
           if (!sb) return;
+          setLabel();
           new MutationObserver(function(muts){
             for (var m of muts) {
-              if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setFlag();
+              if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setLabel();
             }
           }).observe(sb, { attributes: true });
         }
+
+        // inizializzazione: attendi che Streamlit monti sidebar + toggle
         var tries = 0, iv = setInterval(function(){
           tries++;
-          if (document.querySelector('[data-testid="stSidebar"]')) { clearInterval(iv); initObserver(); }
-          if (tries > 50) clearInterval(iv);
-        }, 200);
-        window.addEventListener('load', setFlag);
+          if (getSidebar() && findNativeToggle()) {
+            clearInterval(iv);
+            observeSidebar();
+          }
+          if (tries > 80) { clearInterval(iv); btn.textContent = 'Apri/Chiudi'; }
+        }, 150);
+        window.addEventListener('load', setLabel);
       })();
     </script>
     """,
     unsafe_allow_html=True
 )
 
-# 4) Sidebar (contenuti tuoi)
+# 4) Sidebar
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
