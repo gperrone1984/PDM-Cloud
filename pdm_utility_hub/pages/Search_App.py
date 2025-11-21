@@ -10,18 +10,18 @@ st.set_page_config(
     page_title="Search App",
     page_icon="🔎",
     layout="centered",
-    # initial_sidebar_state="expanded",  # opzionale
+    # initial_sidebar_state="expanded",
 )
 
 # 2) Authentication check
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# 3) Global CSS + JS (larghezza 550px aperta, sidebar invisibile da chiusa, bottone testuale visibile)
+# 3) Global CSS + JS
 st.markdown(
     """
     <style>
-      /* --- Sidebar: tieni solo quello che metti tu --- */
+      /* --- Nascondi la nav interna della sidebar --- */
       [data-testid="stSidebarNav"] { display: none !important; }
 
       /* --- Sidebar APERTA: larghezza forzata 550px --- */
@@ -53,98 +53,123 @@ st.markdown(
           pointer-events: none !important;
       }
 
-      /* --- Nascondi il pulsante nativo con le frecce (lo sostituiamo noi) --- */
-      header button[title="Toggle sidebar"],
-      header button[aria-label="Toggle sidebar"],
-      header button[data-testid="stSidebarCollapseButton"] {
-        display: none !important;
-      }
-
-      /* === BOTTONE PERSONALIZZATO FISSO === */
-      .sb-toggle-btn {
-        position: fixed;
-        top: 16px;
-        left: 16px;               /* mettilo a destra cambiando in right:16px; e togli left */
-        z-index: 99999;
-        background: #ffffff;
-        color: #1f2937;
-        border: 1px solid rgba(0,0,0,.15);
-        border-radius: 12px;
-        padding: 10px 14px;
+      /* === Etichetta testuale accanto alle frecce === */
+      .sb-inline-label {
+        margin-left: 8px;
         font-weight: 700;
         font-size: 0.98rem;
         line-height: 1;
-        letter-spacing: .2px;
-        box-shadow: 0 4px 12px rgba(0,0,0,.10);
+        color: #1f2937;
+        white-space: nowrap;
         cursor: pointer;
         user-select: none;
+        /* leggero accento per visibilità, ma resta “inline” */
+        padding: 4px 8px;
+        border-radius: 8px;
+        border: 1px solid rgba(0,0,0,.08);
+        background: #fff;
       }
-      .sb-toggle-btn:hover {
-        box-shadow: 0 6px 16px rgba(0,0,0,.14);
-        transform: translateY(-1px);
+      .sb-inline-label:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,.10);
       }
-      /* su schermi piccoli riduci un po' */
+
+      /* Su schermi piccoli riduci appena la grandezza */
       @media (max-width: 480px) {
-        .sb-toggle-btn { font-size: 0.9rem; padding: 8px 12px; }
+        .sb-inline-label { font-size: 0.9rem; padding: 3px 6px; }
       }
     </style>
 
-    <!-- HTML del bottone + JS che simula il click sulle frecce native -->
-    <div id="sbToggle" class="sb-toggle-btn">Caricamento…</div>
     <script>
       (function () {
-        var btn = document.getElementById('sbToggle');
+        // Selettori robusti per il toggle nativo
+        var BTN_SEL = 'header [data-testid="stSidebarCollapseButton"], header button[title="Toggle sidebar"], header button[aria-label="Toggle sidebar"]';
+        var SB_SEL  = '[data-testid="stSidebar"]';
+        var LABEL_ID = 'sbInlineLabel';
 
-        function findNativeToggle() {
-          return document.querySelector('header button[title="Toggle sidebar"], header button[aria-label="Toggle sidebar"], header button[data-testid="stSidebarCollapseButton"]');
-        }
-        function getSidebar() {
-          return document.querySelector('[data-testid="stSidebar"]');
-        }
-        function setLabel() {
-          var sb = getSidebar();
-          if (!sb) return;
-          var expanded = sb.getAttribute('aria-expanded') === 'true';
-          btn.textContent = expanded ? 'Clicca per chiudere' : 'Clicca per aprire';
+        function getBtn() { return document.querySelector(BTN_SEL); }
+        function getSb() { return document.querySelector(SB_SEL); }
+
+        // Crea/inserisce l'etichetta accanto al bottone delle frecce
+        function ensureLabel() {
+          var btn = getBtn();
+          if (!btn) return null;
+
+          var label = document.getElementById(LABEL_ID);
+          if (!label) {
+            label = document.createElement('span');
+            label.id = LABEL_ID;
+            label.className = 'sb-inline-label';
+            // Cliccare il testo = cliccare il bottone nativo
+            label.addEventListener('click', function(e) {
+              e.preventDefault(); e.stopPropagation();
+              var b = getBtn();
+              if (b) b.click();
+            });
+          }
+          // Inserisci subito dopo il bottone
+          if (label.parentElement !== btn.parentElement || label.previousElementSibling !== btn) {
+            btn.parentElement.insertBefore(label, btn.nextSibling);
+          }
+          setLabelText();
+          return label;
         }
 
-        // click del nostro bottone => clicca il toggle nativo
-        btn.addEventListener('click', function() {
-          var nativeBtn = findNativeToggle();
-          if (nativeBtn) nativeBtn.click();
-        });
+        // Aggiorna il testo in base allo stato della sidebar
+        function setLabelText() {
+          var sb = getSb();
+          var label = document.getElementById(LABEL_ID);
+          if (!sb || !label) return;
+          var open = sb.getAttribute('aria-expanded') === 'true';
+          label.textContent = open ? 'clicca per chiudere' : 'clicca per aprire';
+        }
 
-        // osserva cambi di stato della sidebar per aggiornare l’etichetta
+        // Osserva i cambi di stato della sidebar
         function observeSidebar() {
-          var sb = getSidebar();
+          var sb = getSb();
           if (!sb) return;
-          setLabel();
           new MutationObserver(function(muts){
             for (var m of muts) {
-              if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setLabel();
+              if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setLabelText();
             }
           }).observe(sb, { attributes: true });
         }
 
-        // inizializzazione: attendi che Streamlit monti sidebar + toggle
+        // Se il header viene ri-renderizzato, rimetti l'etichetta accanto al bottone
+        function observeHeader() {
+          var header = document.querySelector('header');
+          if (!header) return;
+          new MutationObserver(function() {
+            ensureLabel();
+          }).observe(header, { childList: true, subtree: true });
+        }
+
+        // Inizializzazione: attendi che sidebar e toggle siano disponibili
         var tries = 0, iv = setInterval(function(){
           tries++;
-          if (getSidebar() && findNativeToggle()) {
+          if (getSb() && getBtn()) {
             clearInterval(iv);
+            ensureLabel();
             observeSidebar();
+            observeHeader();
           }
-          if (tries > 80) { clearInterval(iv); btn.textContent = 'Apri/Chiudi'; }
-        }, 150);
-        window.addEventListener('load', setLabel);
+          if (tries > 100) clearInterval(iv);
+        }, 120);
+
+        window.addEventListener('load', function() {
+          // tenta ancora al load nel caso di caricamenti lenti
+          ensureLabel();
+          setLabelText();
+        });
       })();
     </script>
     """,
     unsafe_allow_html=True
 )
 
-# 4) Sidebar
+# 4) Sidebar (contenuti)
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
+
 
 # ---------- Helpers ----------
 def strip_accents(s):
