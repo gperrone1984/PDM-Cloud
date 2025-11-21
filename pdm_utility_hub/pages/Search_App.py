@@ -6,25 +6,85 @@ from io import BytesIO
 import pandas as pd
 
 # 1) Page config
-st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
+st.set_page_config(
+    page_title="Search App",
+    page_icon="🔎",
+    layout="centered",
+    # Se vuoi che la sidebar parta già chiusa, scommenta la riga sotto:
+    # initial_sidebar_state="collapsed",
+)
 
-# 2) CSS: sidebar solo con PDM Hub
+# 2) CSS: stile + fix sidebar (sparisce del tutto quando è chiusa)
 st.markdown("""
 <style>
+  /* ---- Nascondi la nav interna della sidebar ---- */
   [data-testid="stSidebarNav"] { display: none !important; }
-  [data-testid="stSidebar"] > div:first-child {
+
+  /* ---- Sidebar aperta: larghezze personalizzate ---- */
+  [data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
       width: 550px !important;
       min-width: 550px !important;
       max-width: 550px !important;
       background-color: #ecf0f1 !important;
       padding: 10px !important;
   }
+
+  /* ---- Main background e container ---- */
   section.main { background-color: #d8dfe6 !important; }
   .main .block-container,
   div[data-testid="stAppViewContainer"] > section > div.block-container {
       background-color: transparent !important;
       padding: 2rem 1rem 1rem 1rem !important;
       border-radius: 0 !important;
+  }
+
+  /* ============================
+     1) Sidebar completamente nascosta quando è chiusa
+     ============================ */
+  [data-testid="stSidebar"][aria-expanded="false"] {
+    transform: translateX(-100%) !important;  /* fuori dallo schermo */
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: hidden !important;
+  }
+  /* evita click nella "zona fantasma" */
+  [data-testid="stSidebar"][aria-expanded="false"] * {
+    pointer-events: none !important;
+  }
+
+  /* ============================
+     2) Cambiare l'icona con testo
+     ============================ */
+  /* Nascondi l'SVG (chevron) del bottone toggle */
+  header button[title="Toggle sidebar"] svg,
+  header button[aria-label="Toggle sidebar"] svg,
+  header button[data-testid="stSidebarCollapseButton"] svg {
+    display: none !important;
+  }
+
+  /* Testo di default quando la sidebar è chiusa */
+  header button[title="Toggle sidebar"]::after,
+  header button[aria-label="Toggle sidebar"]::after,
+  header button[data-testid="stSidebarCollapseButton"]::after {
+    content: "Click to expand";
+    font-weight: 600;
+    font-size: 0.9rem;
+    line-height: 1;
+    letter-spacing: .2px;
+  }
+
+  /* Quando la sidebar è aperta, mostra "Click to collapse".
+     Nota: usiamo :has() per maggiore affidabilità sui layout recenti di Chrome.
+     Se in qualche ambiente il selettore :has() non fosse supportato,
+     il testo rimarrà "Click to expand" (funzionalità non critica). */
+  :root:has([data-testid="stSidebar"][aria-expanded="true"]) header button[title="Toggle sidebar"]::after,
+  :root:has([data-testid="stSidebar"][aria-expanded="true"]) header button[aria-label="Toggle sidebar"]::after,
+  :root:has([data-testid="stSidebar"][aria-expanded="true"]) header button[data-testid="stSidebarCollapseButton"]::after {
+    content: "Click to collapse";
   }
 </style>
 """, unsafe_allow_html=True)
@@ -105,7 +165,7 @@ if st.button("Search and Download"):
 
     # compile patterns
     term_noacc = [strip_accents(t) for t in terms]
-    term_compact = [re.sub(r"\s+", "", t) for t in term_noacc]
+    term_compact = [re.sub(r"\\s+", "", t) for t in term_noacc]
     compiled = [re.compile(build_spacing_pattern(t), re.IGNORECASE) for t in term_compact]
     per_term_counts = [0] * len(compiled)
 
@@ -133,7 +193,9 @@ if st.button("Search and Download"):
             row_dict["Matched terms"] = ";".join(row_hits)
             matches.append(row_dict)
         if i % 1000 == 0:
-            progress.progress(min(1.0, i / (ws.max_row or 1)))
+            # ws.max_row può essere None in read_only; gestiamo il caso robustamente
+            total_rows = ws.max_row or (i + 1)
+            progress.progress(min(1.0, i / total_rows))
 
     progress.empty()
     wb.close()
