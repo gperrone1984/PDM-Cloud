@@ -21,9 +21,9 @@ st.markdown("""
 
 /* Stile generale sidebar */
 [data-testid="stSidebar"] {
-    width: 550px !important;
-    min-width: 550px !important;
-    max-width: 550px !important;
+    width: 300px !important;
+    min-width: 300px !important;
+    max-width: 300px !important;
     background-color: #ecf0f1 !important;
     padding: 10px !important;
     transition: transform 0.4s ease-in-out !important;
