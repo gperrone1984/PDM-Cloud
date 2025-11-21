@@ -11,27 +11,27 @@ st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# ========== 1) CSS generale ==========
+# ========== 1) CSS base ==========
 st.markdown("""
 <style>
-/* --- Nasconde il menu automatico della sidebar --- */
+/* Nascondi il menu interno della sidebar */
 [data-testid="stSidebarNav"] {
     display: none !important;
 }
 
-/* --- Personalizzazione della sidebar --- */
+/* Stile generale sidebar */
 [data-testid="stSidebar"] {
     width: 550px !important;
     min-width: 550px !important;
     max-width: 550px !important;
     background-color: #ecf0f1 !important;
     padding: 10px !important;
-    transition: all 0.4s ease-in-out !important;
+    transition: transform 0.4s ease-in-out !important;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
-    z-index: 9999 !important;
+    z-index: 1000 !important;
 }
 
-/* --- Contenitore principale --- */
+/* Sfondo principale */
 section.main {
     background-color: #d8dfe6 !important;
 }
@@ -39,17 +39,26 @@ section.main {
 div[data-testid="stAppViewContainer"] > section > div.block-container {
     background-color: transparent !important;
     padding: 2rem 1rem 1rem 1rem !important;
-    border-radius: 0 !important;
 }
 
-/* --- Freccia evidenziata --- */
-button[data-testid="collapsedControl"] {
+/* Nasconde completamente la sidebar */
+.sidebar-hidden {
+    transform: translateX(-100%) !important;
+}
+
+/* --- Stile pulsante freccia --- */
+div[data-testid="collapsedControl"] {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+}
+div[data-testid="collapsedControl"] button {
     background-color: #f39c12 !important;
     border-radius: 50% !important;
     box-shadow: 0 0 6px rgba(0,0,0,0.3);
     transition: all 0.3s ease-in-out !important;
 }
-button[data-testid="collapsedControl"]:hover {
+div[data-testid="collapsedControl"] button:hover {
     background-color: #e67e22 !important;
     transform: scale(1.15);
 }
@@ -60,13 +69,7 @@ button[data-testid="collapsedControl"]:hover {
     font-weight: 600;
     font-family: "Segoe UI", sans-serif;
     font-size: 14px;
-    margin-left: 8px;
     user-select: none;
-}
-
-/* --- Transizione per chiudere completamente la sidebar --- */
-.sidebar-hidden {
-    transform: translateX(-100%) !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -77,35 +80,43 @@ st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
 
-# ========== 3) Script JS per chiusura e testo dinamico ==========
+# ========== 3) JavaScript per chiusura e testo dinamico ==========
 st.markdown("""
 <script>
-const interval = setInterval(() => {
-  const btn = window.parent.document.querySelector('button[data-testid="collapsedControl"]');
+const observer = new MutationObserver(() => {
+  const container = window.parent.document.querySelector('div[data-testid="collapsedControl"]');
   const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-  if (btn && sidebar) {
-    clearInterval(interval);
+  if (container && sidebar) {
+    observer.disconnect();
 
-    // ✅ Crea l’etichetta accanto alla freccia
-    let label = document.createElement("span");
-    label.id = "sidebar-toggle-label";
-    label.innerText = "Click to collapse";
-    btn.parentElement.appendChild(label);
+    // Aggiunge testo accanto alla freccia se non esiste
+    if (!container.querySelector('#sidebar-toggle-label')) {
+      const label = document.createElement('span');
+      label.id = 'sidebar-toggle-label';
+      label.innerText = 'Click to collapse';
+      container.appendChild(label);
+    }
 
-    // ✅ Aggiunge il comportamento di chiusura completa
+    const btn = container.querySelector('button');
+    const label = container.querySelector('#sidebar-toggle-label');
+
     btn.addEventListener('click', () => {
       if (sidebar.classList.contains('sidebar-hidden')) {
         sidebar.classList.remove('sidebar-hidden');
-        label.innerText = "Click to collapse";
+        label.innerText = 'Click to collapse';
       } else {
         sidebar.classList.add('sidebar-hidden');
-        label.innerText = "Click to expand";
+        label.innerText = 'Click to expand';
       }
     });
   }
-}, 500);
+});
+
+// Osserva eventuali cambiamenti nel DOM finché non trova gli elementi
+observer.observe(window.parent.document.body, { childList: true, subtree: true });
 </script>
 """, unsafe_allow_html=True)
+
 # ------------ Helpers & State ------------
 
 def strip_accents(s):
