@@ -35,7 +35,7 @@ aside[data-testid="stSidebar"] {
 
 /* Sidebar completamente chiusa: fuori dallo schermo */
 aside[data-testid="stSidebar"].sidebar-closed {
-    margin-left: -600px !important;
+    margin-left: -400px !important;
     transform: translateX(-100%) !important;
     opacity: 0 !important;
     visibility: hidden !important;
