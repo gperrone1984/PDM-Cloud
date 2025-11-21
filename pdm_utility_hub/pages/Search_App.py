@@ -5,87 +5,131 @@ import unicodedata
 from io import BytesIO
 import pandas as pd
 
-# 1) Page config
-st.set_page_config(
-    page_title="Search App",
-    page_icon="🔎",
-    layout="centered",
-)
+# ---------- Page config ----------
+st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
+# Per partire con sidebar chiusa, decommenta:
+# st.set_page_config(initial_sidebar_state="collapsed")
 
-# ===== Toggle sidebar state (nostro) =====
-if "sb_open" not in st.session_state:
-    st.session_state.sb_open = True  # di default aperta
-
-# 2) CSS: stile + controllo sidebar con data-attribute, + nascondi toggle nativo
-st.markdown(f"""
+# ---------- CSS + JS (toggle testuale + sidebar full-hide) ----------
+st.markdown("""
 <style>
-  /* Nascondi qualunque toggle nativo dell'header */
-  header [data-testid="stSidebarCollapseButton"],
-  header button[title="Toggle sidebar"],
-  header button[aria-label="Toggle sidebar"] {{
-    display: none !important;
-  }}
+/* ===== Look generale ===== */
+section.main { background-color: #d8dfe6 !important; }
+.main .block-container,
+div[data-testid="stAppViewContainer"] > section > div.block-container {
+  background-color: transparent !important;
+  padding: 2rem 1rem 1rem 1rem !important;
+  border-radius: 0 !important;
+}
 
-  /* Main look */
-  section.main {{ background-color: #d8dfe6 !important; }}
-  .main .block-container,
-  div[data-testid="stAppViewContainer"] > section > div.block-container {{
-      background-color: transparent !important;
-      padding: 2rem 1rem 1rem 1rem !important;
-      border-radius: 0 !important;
-  }}
+/* Sidebar aperta: larghezze/stile */
+[data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
+  width: 550px !important;
+  min-width: 550px !important;
+  max-width: 550px !important;
+  background-color: #ecf0f1 !important;
+  padding: 10px !important;
+}
+/* Nascondi la nav interna che non ti serve */
+[data-testid="stSidebarNav"] { display: none !important; }
 
-  /* Sidebar aperta: larghezze e stile */
-  html[data-sidebar="open"] [data-testid="stSidebar"] > div:first-child {{
-      width: 550px !important;
-      min-width: 550px !important;
-      max-width: 550px !important;
-      background-color: #ecf0f1 !important;
-      padding: 10px !important;
-  }}
+/* Sidebar chiusa: sparisce COMPLETAMENTE */
+[data-testid="stSidebar"][aria-expanded="false"] {
+  transform: translateX(-100%) !important;
+  width: 0 !important; min-width: 0 !important; max-width: 0 !important;
+  margin: 0 !important; padding: 0 !important; border: 0 !important;
+  overflow: hidden !important;
+}
+[data-testid="stSidebar"][aria-expanded="false"] * {
+  pointer-events: none !important;
+}
 
-  /* Sidebar chiusa: sparisce COMPLETAMENTE */
-  html[data-sidebar="closed"] [data-testid="stSidebar"] {{
-    transform: translateX(-100%) !important;
-    width: 0 !important; min-width: 0 !important; max-width: 0 !important;
-    margin: 0 !important; padding: 0 !important; border: 0 !important;
-    overflow: hidden !important;
-  }}
-  html[data-sidebar="closed"] [data-testid="stSidebar"] * {{
-    pointer-events: none !important;
-  }}
+/* ===== Toggle nativo: trasformalo in bottone testuale fisso ===== */
+/* Nascondi l'icona */
+header button[title="Toggle sidebar"] svg,
+header button[aria-label="Toggle sidebar"] svg,
+header button[data-testid="stSidebarCollapseButton"] svg {
+  display: none !important;
+}
+/* Sposta e stile del bottone */
+header button[title="Toggle sidebar"],
+header button[aria-label="Toggle sidebar"],
+header button[data-testid="stSidebarCollapseButton"] {
+  position: fixed !important;
+  top: 18px !important;
+  right: 24px !important;
+  z-index: 9999 !important;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08) !important;
+  white-space: nowrap !important;
+}
 
-  /* Nascondi la nav interna se non ti serve */
-  [data-testid="stSidebarNav"] {{ display: none !important; }}
+/* Testo di default (sidebar chiusa) */
+header button[title="Toggle sidebar"]::after,
+header button[aria-label="Toggle sidebar"]::after,
+header button[data-testid="stSidebarCollapseButton"]::after {
+  content: "Click to expand";
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: .2px;
+}
+
+/* Quando <html> porta data-sidebar="open" mostra "collapse" */
+html[data-sidebar="open"] header button[title="Toggle sidebar"]::after,
+html[data-sidebar="open"] header button[aria-label="Toggle sidebar"]::after,
+html[data-sidebar="open"] header button[data-testid="stSidebarCollapseButton"]::after {
+  content: "Click to collapse";
+}
 </style>
 
-<!-- Imposta l'attributo in base allo stato Python -->
+<!-- JS: osserva lo stato della sidebar e aggiorna data-sidebar su <html> -->
 <script>
-  document.documentElement.setAttribute('data-sidebar', '{'open' if st.session_state.sb_open else 'closed'}');
+(function () {
+  function setFlag() {
+    var sb = document.querySelector('[data-testid="stSidebar"]');
+    if (!sb) return;
+    var expanded = sb.getAttribute('aria-expanded') === 'true';
+    document.documentElement.setAttribute('data-sidebar', expanded ? 'open' : 'closed');
+  }
+  function initObserver() {
+    setFlag();
+    var sb = document.querySelector('[data-testid="stSidebar"]');
+    if (!sb) return;
+    var mo = new MutationObserver(function(muts){
+      for (var m of muts) {
+        if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setFlag();
+      }
+    });
+    mo.observe(sb, { attributes: true });
+  }
+  var tries = 0, iv = setInterval(function(){
+    tries++;
+    if (document.querySelector('[data-testid="stSidebar"]')) {
+      clearInterval(iv); initObserver();
+    }
+    if (tries > 50) clearInterval(iv);
+  }, 200);
+  window.addEventListener('load', setFlag);
+})();
 </script>
 """, unsafe_allow_html=True)
 
-# ======= NOSTRO toggle button con etichetta dinamica =======
-col_btn, _ = st.columns([1, 9])
-with col_btn:
-    if st.button("Click to collapse" if st.session_state.sb_open else "Click to expand"):
-        st.session_state.sb_open = not st.session_state.sb_open
-        st.rerun()
-
-# 3) Sidebar: link richiesto
+# ---------- Sidebar contenuti ----------
 with st.sidebar:
-    st.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
-    st.markdown("---")
+  st.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
+  st.markdown("---")
 
-# ------------ Helpers & State ------------
+# ---------- Helpers ----------
 def strip_accents(s):
     if not isinstance(s, str):
         s = str(s)
     return ''.join(ch for ch in unicodedata.normalize('NFD', s) if not unicodedata.combining(ch))
 
 def build_spacing_pattern(term):
-    return r"(?<!\w)" + ''.join([re.escape(c) + r"\s*" for c in term]) + r"(?!\w)"
+    return r"(?<!\\w)" + ''.join([re.escape(c) + r"\\s*" for c in term]) + r"(?!\\w)"
 
+# ---------- State ----------
 if 'uploader_key' not in st.session_state:
     st.session_state['uploader_key'] = 0
 for i in range(1, 11):
@@ -102,7 +146,7 @@ def clear_all():
     st.session_state['download_filename'] = ''
     st.session_state['uploader_key'] += 1
 
-# ------------ UI ------------
+# ---------- UI ----------
 st.title("Search App:")
 
 st.markdown("""
@@ -124,23 +168,21 @@ uploaded_file = st.file_uploader(
 
 for i in range(1, 11):
     st.text_input(f"Term {i}", key=f'term{i}')
-custom_filename = st.text_input("Output filename", key="custom_filename")
+st.text_input("Output filename", key="custom_filename")
 
-# ------------ Azione: cerca e prepara il file ------------
+# ---------- Azione: cerca & salva ----------
 if st.button("Search and Download"):
     terms = [st.session_state[f'term{i}'].strip() for i in range(1, 11) if st.session_state[f'term{i}'].strip()]
 
     if not uploaded_file:
-        st.error("Please upload a file first.")
-        st.stop()
+        st.error("Please upload a file first."); st.stop()
     if not terms:
-        st.error("Please enter at least one search term.")
-        st.stop()
+        st.error("Please enter at least one search term."); st.stop()
 
     st.info("Reading file progressively — please wait...")
 
     term_noacc = [strip_accents(t) for t in terms]
-    term_compact = [re.sub(r"\s+", "", t) for t in term_noacc]
+    term_compact = [re.sub(r"\\s+", "", t) for t in term_noacc]
     compiled = [re.compile(build_spacing_pattern(t), re.IGNORECASE) for t in term_compact]
     per_term_counts = [0] * len(compiled)
 
@@ -148,35 +190,28 @@ if st.button("Search and Download"):
     ws = wb.active
 
     headers = [str(c.value) if c.value is not None else "" for c in next(ws.iter_rows(min_row=1, max_row=1))]
-    matches = []
-    total = 0
-    matched = 0
+    matches, total, matched = [], 0, 0
     progress = st.progress(0)
 
     for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         total += 1
         row_values = ["" if v is None else str(v) for v in row]
-        text = ' '.join(row_values)
-        text_noacc = strip_accents(text)
+        text_noacc = strip_accents(' '.join(row_values))
         row_hits = [terms[j] for j, pat in enumerate(compiled) if pat.search(text_noacc)]
         if row_hits:
             matched += 1
             for j, pat in enumerate(compiled):
-                if pat.search(text_noacc):
-                    per_term_counts[j] += 1
-            row_dict = dict(zip(headers, row_values))
-            row_dict["Matched terms"] = ";".join(row_hits)
-            matches.append(row_dict)
+                if pat.search(text_noacc): per_term_counts[j] += 1
+            rd = dict(zip(headers, row_values)); rd["Matched terms"] = ";".join(row_hits)
+            matches.append(rd)
         if i % 1000 == 0:
             total_rows = ws.max_row or (i + 1)
             progress.progress(min(1.0, i / total_rows))
 
-    progress.empty()
-    wb.close()
+    progress.empty(); wb.close()
 
     if not matches:
-        st.warning("No matches found.")
-        st.stop()
+        st.warning("No matches found."); st.stop()
 
     result_df = pd.DataFrame(matches)
     report_df = pd.DataFrame({"Term": terms, "Rows matched": per_term_counts})
@@ -190,17 +225,18 @@ if st.button("Search and Download"):
         report_df.to_excel(writer, sheet_name="Report", index=False)
     buf.seek(0)
 
-    safe_name = re.sub(r'[<>:"/\\\\|?*]', '_', (st.session_state['custom_filename'] or '').strip()) or "filtered_results"
+    import os, re as _re
+    safe_name = _re.sub(r'[<>:"/\\\\|?*]', '_', (st.session_state['custom_filename'] or '').strip()) or "filtered_results"
     st.session_state['download_bytes'] = buf.getvalue()
     st.session_state['download_filename'] = f"{safe_name}.xlsx"
 
-# ------------ Download persistente ------------
+# ---------- Download ----------
 if st.session_state.get('download_bytes'):
     st.download_button(
         "Download filtered Excel + report",
         data=st.session_state['download_bytes'],
         file_name=st.session_state['download_filename'] or "filtered_results.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="download_btn",
-        use_container_width=True
+        use_container_width=True,
+        key="download_btn"
     )
