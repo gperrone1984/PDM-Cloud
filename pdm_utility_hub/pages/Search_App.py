@@ -10,118 +10,72 @@ st.set_page_config(
     page_title="Search App",
     page_icon="🔎",
     layout="centered",
-    # initial_sidebar_state="collapsed",  # <- opzionale
 )
 
-# 2) CSS + JS: sidebar full-hide e testo toggle affidabile
-st.markdown("""
-<style>
-  /* ---- Nascondi la nav interna della sidebar ---- */
-  [data-testid="stSidebarNav"] { display: none !important; }
+# ===== Toggle sidebar state (nostro) =====
+if "sb_open" not in st.session_state:
+    st.session_state.sb_open = True  # di default aperta
 
-  /* ---- Sidebar aperta: larghezze personalizzate ---- */
-  [data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
+# 2) CSS: stile + controllo sidebar con data-attribute, + nascondi toggle nativo
+st.markdown(f"""
+<style>
+  /* Nascondi qualunque toggle nativo dell'header */
+  header [data-testid="stSidebarCollapseButton"],
+  header button[title="Toggle sidebar"],
+  header button[aria-label="Toggle sidebar"] {{
+    display: none !important;
+  }}
+
+  /* Main look */
+  section.main {{ background-color: #d8dfe6 !important; }}
+  .main .block-container,
+  div[data-testid="stAppViewContainer"] > section > div.block-container {{
+      background-color: transparent !important;
+      padding: 2rem 1rem 1rem 1rem !important;
+      border-radius: 0 !important;
+  }}
+
+  /* Sidebar aperta: larghezze e stile */
+  html[data-sidebar="open"] [data-testid="stSidebar"] > div:first-child {{
       width: 550px !important;
       min-width: 550px !important;
       max-width: 550px !important;
       background-color: #ecf0f1 !important;
       padding: 10px !important;
-  }
+  }}
 
-  /* ---- Main background e container ---- */
-  section.main { background-color: #d8dfe6 !important; }
-  .main .block-container,
-  div[data-testid="stAppViewContainer"] > section > div.block-container {
-      background-color: transparent !important;
-      padding: 2rem 1rem 1rem 1rem !important;
-      border-radius: 0 !important;
-  }
-
-  /* ===== 1) Sidebar invisibile quando è chiusa ===== */
-  [data-testid="stSidebar"][aria-expanded="false"] {
+  /* Sidebar chiusa: sparisce COMPLETAMENTE */
+  html[data-sidebar="closed"] [data-testid="stSidebar"] {{
     transform: translateX(-100%) !important;
-    width: 0 !important;
-    min-width: 0 !important;
-    max-width: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: 0 !important;
+    width: 0 !important; min-width: 0 !important; max-width: 0 !important;
+    margin: 0 !important; padding: 0 !important; border: 0 !important;
     overflow: hidden !important;
-  }
-  [data-testid="stSidebar"][aria-expanded="false"] * {
+  }}
+  html[data-sidebar="closed"] [data-testid="stSidebar"] * {{
     pointer-events: none !important;
-  }
+  }}
 
-  /* ===== 2) Cambiare icona con testo ===== */
-  header button[title="Toggle sidebar"] svg,
-  header button[aria-label="Toggle sidebar"] svg,
-  header button[data-testid="stSidebarCollapseButton"] svg {
-    display: none !important;
-  }
-
-  /* Testo di default (sidebar chiusa) */
-  header button[title="Toggle sidebar"]::after,
-  header button[aria-label="Toggle sidebar"]::after,
-  header button[data-testid="stSidebarCollapseButton"]::after {
-    content: "Click to expand";
-    font-weight: 600;
-    font-size: 0.9rem;
-    line-height: 1;
-    letter-spacing: .2px;
-  }
-
-  /* Quando il JS setta data-sidebar="open", mostra "Click to collapse" */
-  html[data-sidebar="open"] header button[title="Toggle sidebar"]::after,
-  html[data-sidebar="open"] header button[aria-label="Toggle sidebar"]::after,
-  html[data-sidebar="open"] header button[data-testid="stSidebarCollapseButton"]::after {
-    content: "Click to collapse";
-  }
+  /* Nascondi la nav interna se non ti serve */
+  [data-testid="stSidebarNav"] {{ display: none !important; }}
 </style>
 
-<!-- JS: osserva lo stato della sidebar e aggiorna data-sidebar su <html> -->
+<!-- Imposta l'attributo in base allo stato Python -->
 <script>
-(function () {
-  function setFlag() {
-    var sb = document.querySelector('[data-testid="stSidebar"]');
-    if (!sb) return;
-    var expanded = sb.getAttribute('aria-expanded') === 'true';
-    document.documentElement.setAttribute('data-sidebar', expanded ? 'open' : 'closed');
-  }
-
-  function initObserver() {
-    setFlag();
-    var mo = new MutationObserver(function(muts){
-      for (var m of muts) {
-        if (m.type === 'attributes' && m.attributeName === 'aria-expanded') {
-          setFlag();
-        }
-      }
-    });
-    var sb = document.querySelector('[data-testid="stSidebar"]');
-    if (sb) {
-      mo.observe(sb, { attributes: true });
-    }
-  }
-
-  // prova finché la sidebar non è disponibile
-  var tries = 0;
-  var iv = setInterval(function(){
-    tries++;
-    if (document.querySelector('[data-testid="stSidebar"]')) {
-      clearInterval(iv);
-      initObserver();
-    }
-    if (tries > 50) clearInterval(iv); // ~10s timeout
-  }, 200);
-
-  window.addEventListener('load', setFlag);
-})();
+  document.documentElement.setAttribute('data-sidebar', '{'open' if st.session_state.sb_open else 'closed'}');
 </script>
 """, unsafe_allow_html=True)
 
-# 3) Sidebar: SOLO il bottone richiesto
-st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
-st.sidebar.markdown("---")
+# ======= NOSTRO toggle button con etichetta dinamica =======
+col_btn, _ = st.columns([1, 9])
+with col_btn:
+    if st.button("Click to collapse" if st.session_state.sb_open else "Click to expand"):
+        st.session_state.sb_open = not st.session_state.sb_open
+        st.rerun()
+
+# 3) Sidebar: link richiesto
+with st.sidebar:
+    st.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
+    st.markdown("---")
 
 # ------------ Helpers & State ------------
 def strip_accents(s):
@@ -130,9 +84,8 @@ def strip_accents(s):
     return ''.join(ch for ch in unicodedata.normalize('NFD', s) if not unicodedata.combining(ch))
 
 def build_spacing_pattern(term):
-    return r"(?<!\\w)" + ''.join([re.escape(c) + r"\\s*" for c in term]) + r"(?!\\w)"
+    return r"(?<!\w)" + ''.join([re.escape(c) + r"\s*" for c in term]) + r"(?!\w)"
 
-# Inizializza lo stato per input e uploader
 if 'uploader_key' not in st.session_state:
     st.session_state['uploader_key'] = 0
 for i in range(1, 11):
@@ -187,7 +140,7 @@ if st.button("Search and Download"):
     st.info("Reading file progressively — please wait...")
 
     term_noacc = [strip_accents(t) for t in terms]
-    term_compact = [re.sub(r"\\s+", "", t) for t in term_noacc]
+    term_compact = [re.sub(r"\s+", "", t) for t in term_noacc]
     compiled = [re.compile(build_spacing_pattern(t), re.IGNORECASE) for t in term_compact]
     per_term_counts = [0] * len(compiled)
 
