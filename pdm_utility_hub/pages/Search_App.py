@@ -42,7 +42,7 @@ div[data-testid="stAppViewContainer"] > section > div.block-container {
     border-radius: 0 !important;
 }
 
-/* --- Stile del pulsante freccia --- */
+/* --- Freccia evidenziata --- */
 button[data-testid="collapsedControl"] {
     background-color: #f39c12 !important;
     border-radius: 50% !important;
@@ -54,7 +54,17 @@ button[data-testid="collapsedControl"]:hover {
     transform: scale(1.15);
 }
 
-/* --- Transizione per nascondere completamente la sidebar --- */
+/* --- Testo accanto alla freccia --- */
+#sidebar-toggle-label {
+    color: #34495e;
+    font-weight: 600;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 14px;
+    margin-left: 8px;
+    user-select: none;
+}
+
+/* --- Transizione per chiudere completamente la sidebar --- */
 .sidebar-hidden {
     transform: translateX(-100%) !important;
 }
@@ -67,7 +77,7 @@ st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
 
-# ========== 3) Script per chiusura totale e animata ==========
+# ========== 3) Script JS per chiusura e testo dinamico ==========
 st.markdown("""
 <script>
 const interval = setInterval(() => {
@@ -76,36 +86,22 @@ const interval = setInterval(() => {
   if (btn && sidebar) {
     clearInterval(interval);
 
+    // ✅ Crea l’etichetta accanto alla freccia
+    let label = document.createElement("span");
+    label.id = "sidebar-toggle-label";
+    label.innerText = "Click to collapse";
+    btn.parentElement.appendChild(label);
+
+    // ✅ Aggiunge il comportamento di chiusura completa
     btn.addEventListener('click', () => {
       if (sidebar.classList.contains('sidebar-hidden')) {
         sidebar.classList.remove('sidebar-hidden');
+        label.innerText = "Click to collapse";
       } else {
         sidebar.classList.add('sidebar-hidden');
+        label.innerText = "Click to expand";
       }
     });
-  }
-}, 500);
-</script>
-""", unsafe_allow_html=True)
-
-# ========== 3) Script per chiudere completamente la sidebar ==========
-st.markdown("""
-<script>
-const waitForSidebar = setInterval(() => {
-  const btn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
-  const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-  if (btn && sidebar) {
-    btn.addEventListener('click', () => {
-      // Se la sidebar è aperta → chiudi completamente
-      if (sidebar.style.transform === 'translateX(0%)' || sidebar.style.transform === '') {
-        sidebar.style.transform = 'translateX(-100%)';
-      } 
-      // Se è chiusa → riapri
-      else {
-        sidebar.style.transform = 'translateX(0%)';
-      }
-    });
-    clearInterval(waitForSidebar);
   }
 }, 500);
 </script>
