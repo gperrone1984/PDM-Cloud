@@ -24,109 +24,56 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
 
 # Page content
 
-# --- Global CSS to hide default navigation and set sidebar width ---
-st.markdown(
-    """
-    <style>
-  /* Sidebar: grigio pieno, altezza schermo, larghezza fissa */
-[data-testid="stSidebar"] {
-  background-color: #f2f3f5 !important;        /* colore dell’intera colonna */
-}
-[data-testid="stSidebar"] > div:first-child {
-  width: 540px !important;                      /* blocca la larghezza */
-  min-width: 540px !important;
-  max-width: 540px !important;
-
-  background-color: #f2f3f5 !important;         /* grigio su tutta l’altezza */
-  height: 100vh !important;                      /* occupa tutto lo schermo */
-  position: sticky !important;                   /* resta “ancorata” in alto */
-  top: 0 !important;
-  overflow-y: auto !important;                   /* scroll interno se serve */
-  border-right: 1px solid rgba(0,0,0,0.06);      /* (opz.) separatore sottile */
+# --- Script per chiudere completamente la sidebar con la freccia ---
+st.markdown("""
+<style>
+/* Quando la sidebar è chiusa: spostata completamente fuori dallo schermo */
+aside[data-testid="stSidebar"].sidebar-closed {
+    margin-left: -600px !important;
+    transform: translateX(-100%) !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 
-/* Evita elementi interni bianchi che “bucano” il grigio */
-[data-testid="stSidebar"] .block-container {
-  background: transparent !important;
+/* Nasconde la freccia quando la sidebar è chiusa */
+.hidden-toggle {
+    display: none !important;
 }
-    /* Hide the auto-generated Streamlit sidebar navigation */
-    [data-testid="stSidebarNav"] {
-        display: none;
-    }
-    /* Make the internal container transparent while keeping padding/radius */
-    div[data-testid="stAppViewContainer"] > section > div.block-container {
-         background-color: transparent !important;
-         padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0.5rem !important;
-    }
-    .main .block-container {
-         background-color: transparent !important;
-         padding: 2rem 1rem 1rem 1rem !important;
-         border-radius: 0.5rem !important;
-    }
-    /* Base style for app buttons/placeholder (from hub) - Adapted to the theme */
-    .app-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin-bottom: 1.5rem;
-    }
-    .app-button-link, .app-button-placeholder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 1.2rem 1.5rem;
-        border-radius: 0.5rem;
-        text-decoration: none;
-        font-weight: bold;
-        font-size: 1.05rem;
-        width: 90%;
-        min-height: 100px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-        margin-bottom: 0.75rem;
-        text-align: center;
-        line-height: 1.4;
-        transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-        border: 1px solid var(--border-color, #cccccc);
-    }
-    .app-button-link svg, .app-button-placeholder svg,
-    .app-button-link .icon, .app-button-placeholder .icon {
-         margin-right: 0.6rem;
-         flex-shrink: 0;
-    }
-    .app-button-link > div[data-testid="stText"] > span:before {
-        content: "" !important; margin-right: 0 !important;
-    }
-    .app-button-link {
-        cursor: pointer;
-    }
-    .app-button-link:hover {
-        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-    }
-    .app-button-placeholder {
-        opacity: 0.7;
-        cursor: default;
-        box-shadow: none;
-        border-style: dashed;
-    }
-    .app-button-placeholder .icon {
-         font-size: 1.5em;
-    }
-    .app-description {
-        font-size: 0.9em;
-        padding: 0 15px;
-        text-align: justify;
-        width: 90%;
-        margin: 0 auto;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+</style>
 
-# --- Button to go back to the Hub in the Sidebar ---
-st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
-st.sidebar.markdown("---")  # Separator
+<script>
+const wait = setInterval(() => {
+  const sidebar = window.parent.document.querySelector('aside[data-testid="stSidebar"]');
+  const toggleBtn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
+  
+  if (sidebar && toggleBtn) {
+    clearInterval(wait);
+
+    toggleBtn.addEventListener("click", () => {
+      // Se la sidebar è aperta → chiudi completamente e nascondi freccia
+      if (!sidebar.classList.contains("sidebar-closed")) {
+        sidebar.classList.add("sidebar-closed");
+        toggleBtn.classList.add("hidden-toggle");
+      } 
+      // Se è chiusa → riapri e mostra di nuovo freccia
+      else {
+        sidebar.classList.remove("sidebar-closed");
+        setTimeout(() => {
+          toggleBtn.classList.remove("hidden-toggle");
+        }, 400);
+      }
+    });
+  }
+}, 500);
+</script>
+""", unsafe_allow_html=True)
+
 
 # ---------------------- Session State Management ----------------------
 if "bundle_creator_session_id" not in st.session_state:
