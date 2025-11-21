@@ -10,7 +10,7 @@ st.set_page_config(
     page_title="Search App",
     page_icon="🔎",
     layout="centered",
-    # initial_sidebar_state="expanded",  # default
+    # initial_sidebar_state="expanded",  # lasciamo il default
 )
 
 # 2) Authentication check
@@ -21,10 +21,19 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
 st.markdown(
     """
     <style>
-      /* Nascondi la nav di Streamlit dentro la sidebar (resta solo ciò che metti tu) */
+      /* ---- Nascondi la nav interna della sidebar ---- */
       [data-testid="stSidebarNav"] { display: none !important; }
 
-      /* Tema main */
+      /* ---- Sidebar APERTA: larghezza forzata 550px ---- */
+      [data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
+          width: 550px !important;
+          min-width: 550px !important;
+          max-width: 550px !important;
+          background-color: #ecf0f1 !important;
+          padding: 10px !important;
+      }
+
+      /* ---- Main look ---- */
       section.main { background-color: #d8dfe6 !important; }
       .main .block-container,
       div[data-testid="stAppViewContainer"] > section > div.block-container {
@@ -33,7 +42,7 @@ st.markdown(
           border-radius: 0 !important;
       }
 
-      /* --- Sidebar chiusa: rimuovi ogni traccia --- */
+      /* ---- Sidebar CHIUSA: scomparsa completa ---- */
       [data-testid="stSidebar"][aria-expanded="false"] {
           transform: translateX(-100%) !important;
           width: 0 !important; min-width: 0 !important; max-width: 0 !important;
@@ -44,46 +53,77 @@ st.markdown(
           pointer-events: none !important;
       }
 
-      /* --- Toggle nativo: mantieni le frecce e aggiungi il testo accanto --- */
-      header button[title="Toggle sidebar"],
-      header button[aria-label="Toggle sidebar"],
-      header button[data-testid="stSidebarCollapseButton"] {
-          display: inline-flex !important;
-          align-items: center !important;
-          gap: 8px !important;         /* spazio tra frecce e testo */
-          white-space: nowrap !important;
-      }
-      /* Ingrandisci un filo le frecce per maggiore visibilità */
+      /* ====== Toggle nativo personalizzato: SOLO TESTO BEN VISIBILE ====== */
+      /* Nascondi l'icona (frecce) */
       header button[title="Toggle sidebar"] svg,
       header button[aria-label="Toggle sidebar"] svg,
       header button[data-testid="stSidebarCollapseButton"] svg {
-          width: 18px !important;
-          height: 18px !important;
-          opacity: 1 !important;
+        display: none !important;
+      }
+
+      /* Stile del bottone (posizione e resa) */
+      header button[title="Toggle sidebar"],
+      header button[aria-label="Toggle sidebar"],
+      header button[data-testid="stSidebarCollapseButton"] {
+        position: fixed !important;
+        top: 16px !important;
+        left: 16px !important;               /* mettilo vicino alla sidebar */
+        z-index: 9999 !important;
+        padding: 10px 14px !important;
+        border-radius: 12px !important;
+        background: #ffffff !important;
+        border: 1px solid rgba(0,0,0,.12) !important;
+        box-shadow: 0 2px 10px rgba(0,0,0,.08) !important;
+        cursor: pointer !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        min-height: 38px !important;
       }
 
       /* Testo quando la sidebar è CHIUSA */
       html[data-sidebar="closed"] header button[title="Toggle sidebar"]::after,
       html[data-sidebar="closed"] header button[aria-label="Toggle sidebar"]::after,
       html[data-sidebar="closed"] header button[data-testid="stSidebarCollapseButton"]::after {
-          content: "clicca per espandere";
-          font-weight: 600;
-          font-size: 0.92rem;
-          letter-spacing: .2px;
+        content: "Clicca per aprire";
+        font-weight: 700;
+        font-size: 0.98rem;
+        color: #1f2937;
+        letter-spacing: .2px;
+        white-space: nowrap;
       }
 
       /* Testo quando la sidebar è APERTA */
       html[data-sidebar="open"] header button[title="Toggle sidebar"]::after,
       html[data-sidebar="open"] header button[aria-label="Toggle sidebar"]::after,
       html[data-sidebar="open"] header button[data-testid="stSidebarCollapseButton"]::after {
-          content: "clicca per chiudere";
-          font-weight: 600;
-          font-size: 0.92rem;
-          letter-spacing: .2px;
+        content: "Clicca per chiudere";
+        font-weight: 700;
+        font-size: 0.98rem;
+        color: #1f2937;
+        letter-spacing: .2px;
+        white-space: nowrap;
+      }
+
+      /* Hover/Focus: più evidente */
+      header button[title="Toggle sidebar"]:hover,
+      header button[aria-label="Toggle sidebar"]:hover,
+      header button[data-testid="stSidebarCollapseButton"]:hover {
+        box-shadow: 0 4px 14px rgba(0,0,0,.14) !important;
+        transform: translateY(-1px);
+      }
+
+      /* Mobile: se lo spazio è poco, riduci il testo ma resta visibile */
+      @media (max-width: 480px) {
+        html[data-sidebar] header button[title="Toggle sidebar"]::after,
+        html[data-sidebar] header button[aria-label="Toggle sidebar"]::after,
+        html[data-sidebar] header button[data-testid="stSidebarCollapseButton"]::after {
+          font-size: 0.86rem;
+        }
       }
     </style>
 
-    <!-- JS: sincronizza data-sidebar su <html> con lo stato aria-expanded della sidebar -->
+    <!-- JS: sincronizza data-sidebar="open|closed" con aria-expanded -->
     <script>
       (function () {
         function setFlag() {
@@ -114,7 +154,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 4) Sidebar
+# 4) Sidebar (contenuti tuoi)
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
