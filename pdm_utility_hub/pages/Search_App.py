@@ -1,182 +1,64 @@
 # pages/Search_App.py
 import streamlit as st
-import streamlit.components.v1 as components  # <-- per iniettare JS affidabile
 import pandas as pd
 import re
 import unicodedata
 from io import BytesIO
 
-# 1) Page config (MUST be first)
+# 1) Page config (MUST be first) - AGGIUNTO 'wide' e 'initial_sidebar_state'
 st.set_page_config(
     page_title="Search App",
     page_icon="🔎",
-    layout="centered",
-    # initial_sidebar_state="expanded",  # opzionale
+    layout="wide", # Meglio usare wide per la chiusura
+    initial_sidebar_state="expanded" # Sidebar aperta di default
 )
 
 # 2) Authentication check
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# 3) Global CSS: 550px aperta, invisibile da chiusa, look base
+# 3) Global CSS - RIMOSSE le regole di larghezza fissa per la sidebar
 st.markdown(
     """
     <style>
-      /* Sidebar APERTA: larghezza forzata a 550px */
-      [data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
-        width: 550px !important;
-        min-width: 550px !important;
-        max-width: 550px !important;
-        background-color: #ecf0f1 !important;
-        padding: 10px !important;
-      }
-
-      /* Sidebar CHIUSA: scompare del tutto */
-      [data-testid="stSidebar"][aria-expanded="false"] {
-        transform: translateX(-100%) !important;
-        width: 0 !important; min-width: 0 !important; max-width: 0 !important;
-        margin: 0 !important; padding: 0 !important; border: 0 !important;
-        overflow: hidden !important;
-      }
-      [data-testid="stSidebar"][aria-expanded="false"] * {
-        pointer-events: none !important;
-      }
-
-      /* Nascondi la nav interna (lasci solo ciò che aggiungi tu) */
       [data-testid="stSidebarNav"] { display: none !important; }
-
-      /* Look del main */
+      [data-testid="stSidebar"] > div:first-child {
+          /* width: 550px !important;  <-- Rimosso */
+          /* min-width: 550px !important;  <-- Rimosso */
+          /* max-width: 550px !important;  <-- Rimosso */
+          background-color: #ecf0f1 !important;
+          padding: 10px !important;
+      }
       section.main { background-color: #d8dfe6 !important; }
       .main .block-container,
       div[data-testid="stAppViewContainer"] > section > div.block-container {
-        background-color: transparent !important;
-        padding: 2rem 1rem 1rem 1rem !important;
-        border-radius: 0 !important;
-      }
-
-      /* Migliora visibilità frecce (non le nascondiamo) */
-      header button {
-        white-space: nowrap;
-      }
-      header button svg {
-        width: 18px !important;
-        height: 18px !important;
-        opacity: 1 !important;
-      }
-
-      /* Etichetta che iniettiamo via JS: stile */
-      #sb-inline-label {
-        margin-left: 8px;
-        font-weight: 700;
-        font-size: 0.98rem;
-        letter-spacing: .2px;
-        color: #1f2937;
-        background: #fff;
-        border: 1px solid rgba(0,0,0,.08);
-        border-radius: 8px;
-        padding: 4px 8px;
-        line-height: 1;
-        cursor: pointer;
-        user-select: none;
-      }
-      #sb-inline-label:hover {
-        box-shadow: 0 2px 8px rgba(0,0,0,.10);
-      }
-
-      @media (max-width: 480px) {
-        #sb-inline-label { font-size: 0.9rem; padding: 3px 6px; }
+          background-color: transparent !important;
+          padding: 2rem 1rem 1rem 1rem !important;
+          border-radius: 0 !important;
       }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# 3-bis) JS robusto: aggiunge un <span> accanto al toggle nativo e sincronizza il testo
-components.html(
-    """
-    <script>
-      (function () {
-        const doc = window.parent.document;
-        const SB_SEL = '[data-testid="stSidebar"]';
-
-        function findToggle() {
-          const header = doc.querySelector('header');
-          if (!header) return null;
-
-          // 1) preferisci button con riferimenti "Sidebar"
-          let btn = header.querySelector('[data-testid*="Sidebar" i]');
-          if (btn) return btn;
-
-          // 2) prova gli attributi più comuni
-          btn = header.querySelector('button[title*="sidebar" i], button[aria-label*="sidebar" i]');
-          if (btn) return btn;
-
-          // 3) fallback: primo bottone in header
-          return header.querySelector('button');
-        }
-
-        function getSidebar() { return doc.querySelector(SB_SEL); }
-
-        function setLabelText() {
-          const sb = getSidebar();
-          const label = doc.getElementById('sb-inline-label');
-          if (!sb || !label) return;
-          const open = sb.getAttribute('aria-expanded') === 'true';
-          label.textContent = open ? 'clicca per chiudere' : 'clicca per aprire';
-        }
-
-        function ensureLabel() {
-          const btn = findToggle();
-          if (!btn) return false;
-
-          let label = doc.getElementById('sb-inline-label');
-          if (!label) {
-            label = doc.createElement('span');
-            label.id = 'sb-inline-label';
-            label.textContent = 'clicca per aprire';
-            // click sul testo = click sulle frecce
-            label.addEventListener('click', function(e){
-              e.preventDefault(); e.stopPropagation();
-              const b = findToggle(); if (b) b.click();
-            });
-            // inserisci subito DOPO il bottone delle frecce
-            btn.parentElement.insertBefore(label, btn.nextSibling);
-          }
-          setLabelText();
-          return true;
-        }
-
-        function observe() {
-          const sb = getSidebar();
-          if (!sb) return;
-          if (window.parent.__sbInlineObs) return; // evita duplicazioni
-          window.parent.__sbInlineObs = new MutationObserver(function(muts){
-            for (const m of muts) {
-              if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setLabelText();
-            }
-          });
-          window.parent.__sbInlineObs.observe(sb, { attributes: true, attributeFilter: ['aria-expanded'] });
-        }
-
-        // attesa finché header + sidebar non sono pronti
-        let tries = 0;
-        const iv = setInterval(function(){
-          if (ensureLabel()) { clearInterval(iv); observe(); }
-          if (++tries > 100) clearInterval(iv);
-        }, 150);
-
-        // ritocco al load
-        window.addEventListener('load', setLabelText);
-      })();
-    </script>
-    """,
-    height=0, width=0
-)
-
-# 4) Sidebar (contenuti tuoi)
+# 4) Sidebar - AGGIUNTO il messaggio di suggerimento
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
+# Messaggio per suggerire all'utente di chiudere/espandere
+st.sidebar.markdown(
+    """
+    <p style='font-size: small; text-align: center; color: #555;'>
+        Clicca la freccia per chiudere/espandere
+    </p>
+    """,
+    unsafe_allow_html=True
+)
+
+st.sidebar.markdown("---")
+
+# ... il resto della tua logica di ricerca
+# ...
 
 
 # ---------- Helpers ----------
