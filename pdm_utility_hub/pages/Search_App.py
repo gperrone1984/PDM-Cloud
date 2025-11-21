@@ -19,18 +19,22 @@ st.markdown("""
 [data-testid="stSidebarNav"] {
     display: none !important;
 }
-[data-testid="stSidebar"] > div:first-child {
+
+/* --- Contenitore principale della sidebar --- */
+[data-testid="stSidebar"] {
     width: 550px !important;
     min-width: 550px !important;
     max-width: 550px !important;
     background-color: #ecf0f1 !important;
     padding: 10px !important;
-    transition: transform 0.4s ease-in-out !important;
+    transition: all 0.5s ease-in-out !important;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.2);
     z-index: 9999 !important;
 }
 
-/* Quando la sidebar è nascosta */
-.sidebar-hidden {
+/* --- Stato chiuso: sposta completamente fuori lo schermo --- */
+.sidebar-closed {
+    margin-left: -550px !important;
     transform: translateX(-100%) !important;
 }
 
@@ -47,39 +51,33 @@ div[data-testid="stAppViewContainer"] > section > div.block-container {
 </style>
 """, unsafe_allow_html=True)
 
-
 # =========================
 # 3) Sidebar: solo il bottone
 # =========================
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
-
 # =========================
 # 4) Script: chiusura totale
 # =========================
 st.markdown("""
 <script>
-const observer = new MutationObserver(() => {
+const wait = setInterval(() => {
   const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
   const toggleBtn = window.parent.document.querySelector('button[data-testid="collapsedControl"]');
-  
-  if (sidebar && toggleBtn) {
-    observer.disconnect();
 
-    // Quando si clicca la freccia, nasconde o mostra completamente la sidebar
-    toggleBtn.addEventListener('click', () => {
-      if (sidebar.classList.contains('sidebar-hidden')) {
-        sidebar.classList.remove('sidebar-hidden');
+  if (sidebar && toggleBtn) {
+    clearInterval(wait);
+
+    toggleBtn.addEventListener("click", () => {
+      if (sidebar.classList.contains("sidebar-closed")) {
+        sidebar.classList.remove("sidebar-closed");
       } else {
-        sidebar.classList.add('sidebar-hidden');
+        sidebar.classList.add("sidebar-closed");
       }
     });
   }
-});
-
-// Osserva il DOM finché gli elementi non vengono caricati
-observer.observe(window.parent.document.body, { childList: true, subtree: true });
+}, 500);
 </script>
 """, unsafe_allow_html=True)
 
