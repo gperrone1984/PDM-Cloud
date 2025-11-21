@@ -11,62 +11,80 @@ st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# --- CSS ---
+import streamlit as st
+
+# ========== 1) CSS generale ==========
 st.markdown("""
 <style>
-[data-testid="collapsedControl"] { display: none !important; } /* nasconde la freccia originale */
+/* Nasconde il menu automatico della sidebar */
+[data-testid="stSidebarNav"] {
+    display: none !important;
+}
 
-#custom-toggle {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    background-color: #f39c12;
-    color: white;
-    border: none;
-    border-radius: 30px;
-    padding: 8px 16px;
-    font-weight: 600;
-    cursor: pointer;
-    z-index: 2000;
-    box-shadow: 0 0 8px rgba(0,0,0,0.3);
-    transition: all 0.3s ease-in-out;
+/* Personalizzazione della sidebar */
+[data-testid="stSidebar"] > div:first-child {
+    width: 550px !important;
+    min-width: 550px !important;
+    max-width: 550px !important;
+    background-color: #ecf0f1 !important;
+    padding: 10px !important;
+    transition: all 0.5s ease-in-out !important;
 }
-#custom-toggle:hover {
-    background-color: #e67e22;
-    transform: scale(1.05);
+
+/* Colore di sfondo della pagina principale */
+section.main {
+    background-color: #d8dfe6 !important;
 }
-[data-testid="stSidebar"] {
-    transition: transform 0.4s ease-in-out !important;
+
+/* Layout principale */
+.main .block-container, 
+div[data-testid="stAppViewContainer"] > section > div.block-container {
+    background-color: transparent !important;
+    padding: 2rem 1rem 1rem 1rem !important;
+    border-radius: 0 !important;
 }
-.sidebar-hidden {
-    transform: translateX(-100%) !important;
+
+/* Freccia di chiusura evidenziata */
+[data-testid="collapsedControl"] {
+    background-color: #f39c12 !important;
+    border-radius: 50% !important;
+    box-shadow: 0 0 6px rgba(0,0,0,0.3);
+    transition: all 0.2s ease-in-out !important;
+}
+[data-testid="collapsedControl"]:hover {
+    background-color: #e67e22 !important;
+    transform: scale(1.1);
 }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Sidebar ---
+# ========== 2) Sidebar ==========
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
-# --- Bottone custom + script ---
+# ========== 3) Script per chiudere completamente la sidebar ==========
 st.markdown("""
-<button id="custom-toggle">⬅️ Click to collapse</button>
-
 <script>
-const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-const btn = document.getElementById("custom-toggle");
-
-btn.addEventListener("click", () => {
-  if (sidebar.classList.contains("sidebar-hidden")) {
-    sidebar.classList.remove("sidebar-hidden");
-    btn.innerText = "⬅️ Click to collapse";
-  } else {
-    sidebar.classList.add("sidebar-hidden");
-    btn.innerText = "➡️ Click to expand";
+const waitForSidebar = setInterval(() => {
+  const btn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
+  const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+  if (btn && sidebar) {
+    btn.addEventListener('click', () => {
+      // Se la sidebar è aperta → chiudi completamente
+      if (sidebar.style.transform === 'translateX(0%)' || sidebar.style.transform === '') {
+        sidebar.style.transform = 'translateX(-100%)';
+      } 
+      // Se è chiusa → riapri
+      else {
+        sidebar.style.transform = 'translateX(0%)';
+      }
+    });
+    clearInterval(waitForSidebar);
   }
-});
+}, 500);
 </script>
 """, unsafe_allow_html=True)
+
 
 # ------------ Helpers & State ------------
 
