@@ -8,6 +8,9 @@ import pandas as pd
 # 1) Page config
 st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.switch_page("app.py")
+
 # 2) CSS: sidebar solo con PDM Hub
 st.markdown("""
 <style>
