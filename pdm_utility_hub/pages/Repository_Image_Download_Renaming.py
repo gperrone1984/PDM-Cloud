@@ -52,7 +52,7 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
 # --- CSS globale e comportamento sidebar ---
 st.markdown("""
 <style>
-/* Sidebar */
+/* === BASE SIDEBAR === */
 aside[data-testid="stSidebar"] {
     background-color: #f2f3f5 !important;
     width: 540px !important;
@@ -63,9 +63,11 @@ aside[data-testid="stSidebar"] {
     transition: all 0.5s ease-in-out !important;
     z-index: 9999 !important;
 }
+
+/* Nasconde la navigazione automatica di Streamlit */
 [data-testid="stSidebarNav"] { display: none !important; }
 
-/* Chiusura completa sidebar */
+/* === SIDEBAR CHIUSA === */
 aside[data-testid="stSidebar"].sidebar-closed {
     transform: translateX(-100%) !important;
     opacity: 0 !important;
@@ -78,38 +80,48 @@ aside[data-testid="stSidebar"].sidebar-closed {
     box-shadow: none !important;
 }
 
-/* Nasconde la freccia quando chiusa */
+/* Nasconde la freccia quando sidebar chiusa */
 .hidden-toggle {
     display: none !important;
 }
 
-/* Sposta tutto il layout principale verso sinistra */
-div[data-testid="stAppViewContainer"],
-section.main,
-div.block-container,
-div[data-testid="stMainBlockContainer"],
-div[data-testid="stVerticalBlock"],
-div[data-testid="stDecoration"],
-header[data-testid="stHeader"],
-div[data-testid="stToolbar"] {
-    margin-left: 0 !important;
-    padding-left: 0 !important;
+/* === CONTENUTO PRINCIPALE === */
+div[data-testid="stAppViewContainer"] {
+    transition: all 0.5s ease-in-out !important;
+    margin-left: 540px !important; /* posizione normale con sidebar */
 }
 
-/* Contenuto principale a piena larghezza */
-div[data-testid="stAppViewContainer"] {
-    transition: margin-left 0.5s ease-in-out !important;
-    margin-left: 540px !important;
-}
+/* Sposta tutto a sinistra quando sidebar chiusa */
 .sidebar-closed ~ div[data-testid="stAppViewContainer"] {
     margin-left: 0 !important;
 }
 
-/* Rimuove il background bianco residuo */
-html, body, #root, .main {
+/* === RIMUOVE OGNI ZONA BIANCA === */
+html, body, #root {
     background-color: #f2f3f5 !important;
     margin: 0 !important;
     padding: 0 !important;
+    overflow-x: hidden !important;
+}
+
+section.main, div.block-container {
+    background-color: #f2f3f5 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+div[data-testid="stApp"] {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+}
+
+div[data-testid="stApp"] > div:first-child,
+div[data-testid="stDecoration"],
+div[data-testid="stMainBlockContainer"],
+div[data-testid="stVerticalBlock"] {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+    background-color: #f2f3f5 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -118,7 +130,7 @@ html, body, #root, .main {
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
-# --- Script per chiusura totale e shift completo a sinistra ---
+# --- Script per chiusura completa e shift totale a sinistra ---
 st.markdown("""
 <script>
 const wait = setInterval(() => {
@@ -136,7 +148,7 @@ const wait = setInterval(() => {
         toggleBtn.classList.add("hidden-toggle");
         appContainer.style.marginLeft = "0";
       } 
-      // Sidebar chiusa → riapri e riporta posizione originale
+      // Sidebar chiusa → riapri e ripristina
       else {
         sidebar.classList.remove("sidebar-closed");
         setTimeout(() => {
@@ -149,7 +161,6 @@ const wait = setInterval(() => {
 }, 500);
 </script>
 """, unsafe_allow_html=True)
-
 # ----- Sidebar Content -----
 st.sidebar.markdown("<div class='sidebar-title'>PDM Image Download and Renaming App</div>", unsafe_allow_html=True)
 st.sidebar.markdown("<div class='sidebar-subtitle'>What This App Does</div>", unsafe_allow_html=True)
