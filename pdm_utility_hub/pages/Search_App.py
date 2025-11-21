@@ -1,5 +1,6 @@
 # pages/Search_App.py
 import streamlit as st
+import streamlit.components.v1 as components  # <-- per iniettare JS affidabile
 import pandas as pd
 import re
 import unicodedata
@@ -10,165 +11,172 @@ st.set_page_config(
     page_title="Search App",
     page_icon="🔎",
     layout="centered",
-    # initial_sidebar_state="expanded",
+    # initial_sidebar_state="expanded",  # opzionale
 )
 
 # 2) Authentication check
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# 3) Global CSS + JS
+# 3) Global CSS: 550px aperta, invisibile da chiusa, look base
 st.markdown(
     """
     <style>
-      /* --- Nascondi la nav interna della sidebar --- */
-      [data-testid="stSidebarNav"] { display: none !important; }
-
-      /* --- Sidebar APERTA: larghezza forzata 550px --- */
+      /* Sidebar APERTA: larghezza forzata a 550px */
       [data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
-          width: 550px !important;
-          min-width: 550px !important;
-          max-width: 550px !important;
-          background-color: #ecf0f1 !important;
-          padding: 10px !important;
+        width: 550px !important;
+        min-width: 550px !important;
+        max-width: 550px !important;
+        background-color: #ecf0f1 !important;
+        padding: 10px !important;
       }
 
-      /* --- Main look --- */
+      /* Sidebar CHIUSA: scompare del tutto */
+      [data-testid="stSidebar"][aria-expanded="false"] {
+        transform: translateX(-100%) !important;
+        width: 0 !important; min-width: 0 !important; max-width: 0 !important;
+        margin: 0 !important; padding: 0 !important; border: 0 !important;
+        overflow: hidden !important;
+      }
+      [data-testid="stSidebar"][aria-expanded="false"] * {
+        pointer-events: none !important;
+      }
+
+      /* Nascondi la nav interna (lasci solo ciò che aggiungi tu) */
+      [data-testid="stSidebarNav"] { display: none !important; }
+
+      /* Look del main */
       section.main { background-color: #d8dfe6 !important; }
       .main .block-container,
       div[data-testid="stAppViewContainer"] > section > div.block-container {
-          background-color: transparent !important;
-          padding: 2rem 1rem 1rem 1rem !important;
-          border-radius: 0 !important;
+        background-color: transparent !important;
+        padding: 2rem 1rem 1rem 1rem !important;
+        border-radius: 0 !important;
       }
 
-      /* --- Sidebar CHIUSA: scomparsa completa (niente bordino) --- */
-      [data-testid="stSidebar"][aria-expanded="false"] {
-          transform: translateX(-100%) !important;
-          width: 0 !important; min-width: 0 !important; max-width: 0 !important;
-          margin: 0 !important; padding: 0 !important; border: 0 !important;
-          overflow: hidden !important;
+      /* Migliora visibilità frecce (non le nascondiamo) */
+      header button {
+        white-space: nowrap;
       }
-      [data-testid="stSidebar"][aria-expanded="false"] * {
-          pointer-events: none !important;
+      header button svg {
+        width: 18px !important;
+        height: 18px !important;
+        opacity: 1 !important;
       }
 
-      /* === Etichetta testuale accanto alle frecce === */
-      .sb-inline-label {
+      /* Etichetta che iniettiamo via JS: stile */
+      #sb-inline-label {
         margin-left: 8px;
         font-weight: 700;
         font-size: 0.98rem;
-        line-height: 1;
+        letter-spacing: .2px;
         color: #1f2937;
-        white-space: nowrap;
+        background: #fff;
+        border: 1px solid rgba(0,0,0,.08);
+        border-radius: 8px;
+        padding: 4px 8px;
+        line-height: 1;
         cursor: pointer;
         user-select: none;
-        /* leggero accento per visibilità, ma resta “inline” */
-        padding: 4px 8px;
-        border-radius: 8px;
-        border: 1px solid rgba(0,0,0,.08);
-        background: #fff;
       }
-      .sb-inline-label:hover {
+      #sb-inline-label:hover {
         box-shadow: 0 2px 8px rgba(0,0,0,.10);
       }
 
-      /* Su schermi piccoli riduci appena la grandezza */
       @media (max-width: 480px) {
-        .sb-inline-label { font-size: 0.9rem; padding: 3px 6px; }
+        #sb-inline-label { font-size: 0.9rem; padding: 3px 6px; }
       }
     </style>
-
-    <script>
-      (function () {
-        // Selettori robusti per il toggle nativo
-        var BTN_SEL = 'header [data-testid="stSidebarCollapseButton"], header button[title="Toggle sidebar"], header button[aria-label="Toggle sidebar"]';
-        var SB_SEL  = '[data-testid="stSidebar"]';
-        var LABEL_ID = 'sbInlineLabel';
-
-        function getBtn() { return document.querySelector(BTN_SEL); }
-        function getSb() { return document.querySelector(SB_SEL); }
-
-        // Crea/inserisce l'etichetta accanto al bottone delle frecce
-        function ensureLabel() {
-          var btn = getBtn();
-          if (!btn) return null;
-
-          var label = document.getElementById(LABEL_ID);
-          if (!label) {
-            label = document.createElement('span');
-            label.id = LABEL_ID;
-            label.className = 'sb-inline-label';
-            // Cliccare il testo = cliccare il bottone nativo
-            label.addEventListener('click', function(e) {
-              e.preventDefault(); e.stopPropagation();
-              var b = getBtn();
-              if (b) b.click();
-            });
-          }
-          // Inserisci subito dopo il bottone
-          if (label.parentElement !== btn.parentElement || label.previousElementSibling !== btn) {
-            btn.parentElement.insertBefore(label, btn.nextSibling);
-          }
-          setLabelText();
-          return label;
-        }
-
-        // Aggiorna il testo in base allo stato della sidebar
-        function setLabelText() {
-          var sb = getSb();
-          var label = document.getElementById(LABEL_ID);
-          if (!sb || !label) return;
-          var open = sb.getAttribute('aria-expanded') === 'true';
-          label.textContent = open ? 'clicca per chiudere' : 'clicca per aprire';
-        }
-
-        // Osserva i cambi di stato della sidebar
-        function observeSidebar() {
-          var sb = getSb();
-          if (!sb) return;
-          new MutationObserver(function(muts){
-            for (var m of muts) {
-              if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setLabelText();
-            }
-          }).observe(sb, { attributes: true });
-        }
-
-        // Se il header viene ri-renderizzato, rimetti l'etichetta accanto al bottone
-        function observeHeader() {
-          var header = document.querySelector('header');
-          if (!header) return;
-          new MutationObserver(function() {
-            ensureLabel();
-          }).observe(header, { childList: true, subtree: true });
-        }
-
-        // Inizializzazione: attendi che sidebar e toggle siano disponibili
-        var tries = 0, iv = setInterval(function(){
-          tries++;
-          if (getSb() && getBtn()) {
-            clearInterval(iv);
-            ensureLabel();
-            observeSidebar();
-            observeHeader();
-          }
-          if (tries > 100) clearInterval(iv);
-        }, 120);
-
-        window.addEventListener('load', function() {
-          // tenta ancora al load nel caso di caricamenti lenti
-          ensureLabel();
-          setLabelText();
-        });
-      })();
-    </script>
     """,
     unsafe_allow_html=True
 )
 
-# 4) Sidebar (contenuti)
+# 3-bis) JS robusto: aggiunge un <span> accanto al toggle nativo e sincronizza il testo
+components.html(
+    """
+    <script>
+      (function () {
+        const doc = window.parent.document;
+        const SB_SEL = '[data-testid="stSidebar"]';
+
+        function findToggle() {
+          const header = doc.querySelector('header');
+          if (!header) return null;
+
+          // 1) preferisci button con riferimenti "Sidebar"
+          let btn = header.querySelector('[data-testid*="Sidebar" i]');
+          if (btn) return btn;
+
+          // 2) prova gli attributi più comuni
+          btn = header.querySelector('button[title*="sidebar" i], button[aria-label*="sidebar" i]');
+          if (btn) return btn;
+
+          // 3) fallback: primo bottone in header
+          return header.querySelector('button');
+        }
+
+        function getSidebar() { return doc.querySelector(SB_SEL); }
+
+        function setLabelText() {
+          const sb = getSidebar();
+          const label = doc.getElementById('sb-inline-label');
+          if (!sb || !label) return;
+          const open = sb.getAttribute('aria-expanded') === 'true';
+          label.textContent = open ? 'clicca per chiudere' : 'clicca per aprire';
+        }
+
+        function ensureLabel() {
+          const btn = findToggle();
+          if (!btn) return false;
+
+          let label = doc.getElementById('sb-inline-label');
+          if (!label) {
+            label = doc.createElement('span');
+            label.id = 'sb-inline-label';
+            label.textContent = 'clicca per aprire';
+            // click sul testo = click sulle frecce
+            label.addEventListener('click', function(e){
+              e.preventDefault(); e.stopPropagation();
+              const b = findToggle(); if (b) b.click();
+            });
+            // inserisci subito DOPO il bottone delle frecce
+            btn.parentElement.insertBefore(label, btn.nextSibling);
+          }
+          setLabelText();
+          return true;
+        }
+
+        function observe() {
+          const sb = getSidebar();
+          if (!sb) return;
+          if (window.parent.__sbInlineObs) return; // evita duplicazioni
+          window.parent.__sbInlineObs = new MutationObserver(function(muts){
+            for (const m of muts) {
+              if (m.type === 'attributes' && m.attributeName === 'aria-expanded') setLabelText();
+            }
+          });
+          window.parent.__sbInlineObs.observe(sb, { attributes: true, attributeFilter: ['aria-expanded'] });
+        }
+
+        // attesa finché header + sidebar non sono pronti
+        let tries = 0;
+        const iv = setInterval(function(){
+          if (ensureLabel()) { clearInterval(iv); observe(); }
+          if (++tries > 100) clearInterval(iv);
+        }, 150);
+
+        // ritocco al load
+        window.addEventListener('load', setLabelText);
+      })();
+    </script>
+    """,
+    height=0, width=0
+)
+
+# 4) Sidebar (contenuti tuoi)
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
+
 
 
 # ---------- Helpers ----------
