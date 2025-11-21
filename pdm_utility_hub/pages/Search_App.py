@@ -10,11 +10,10 @@ st.set_page_config(
     page_title="Search App",
     page_icon="🔎",
     layout="centered",
-    # Se vuoi che la sidebar parta già chiusa, scommenta la riga sotto:
-    # initial_sidebar_state="collapsed",
+    # initial_sidebar_state="collapsed",  # <- opzionale
 )
 
-# 2) CSS: stile + fix sidebar (sparisce del tutto quando è chiusa)
+# 2) CSS + JS: sidebar full-hide e testo toggle affidabile
 st.markdown("""
 <style>
   /* ---- Nascondi la nav interna della sidebar ---- */
@@ -38,11 +37,9 @@ st.markdown("""
       border-radius: 0 !important;
   }
 
-  /* ============================
-     1) Sidebar completamente nascosta quando è chiusa
-     ============================ */
+  /* ===== 1) Sidebar invisibile quando è chiusa ===== */
   [data-testid="stSidebar"][aria-expanded="false"] {
-    transform: translateX(-100%) !important;  /* fuori dallo schermo */
+    transform: translateX(-100%) !important;
     width: 0 !important;
     min-width: 0 !important;
     max-width: 0 !important;
@@ -51,22 +48,18 @@ st.markdown("""
     border: 0 !important;
     overflow: hidden !important;
   }
-  /* evita click nella "zona fantasma" */
   [data-testid="stSidebar"][aria-expanded="false"] * {
     pointer-events: none !important;
   }
 
-  /* ============================
-     2) Cambiare l'icona con testo
-     ============================ */
-  /* Nascondi l'SVG (chevron) del bottone toggle */
+  /* ===== 2) Cambiare icona con testo ===== */
   header button[title="Toggle sidebar"] svg,
   header button[aria-label="Toggle sidebar"] svg,
   header button[data-testid="stSidebarCollapseButton"] svg {
     display: none !important;
   }
 
-  /* Testo di default quando la sidebar è chiusa */
+  /* Testo di default (sidebar chiusa) */
   header button[title="Toggle sidebar"]::after,
   header button[aria-label="Toggle sidebar"]::after,
   header button[data-testid="stSidebarCollapseButton"]::after {
@@ -77,16 +70,53 @@ st.markdown("""
     letter-spacing: .2px;
   }
 
-  /* Quando la sidebar è aperta, mostra "Click to collapse".
-     Nota: usiamo :has() per maggiore affidabilità sui layout recenti di Chrome.
-     Se in qualche ambiente il selettore :has() non fosse supportato,
-     il testo rimarrà "Click to expand" (funzionalità non critica). */
-  :root:has([data-testid="stSidebar"][aria-expanded="true"]) header button[title="Toggle sidebar"]::after,
-  :root:has([data-testid="stSidebar"][aria-expanded="true"]) header button[aria-label="Toggle sidebar"]::after,
-  :root:has([data-testid="stSidebar"][aria-expanded="true"]) header button[data-testid="stSidebarCollapseButton"]::after {
+  /* Quando il JS setta data-sidebar="open", mostra "Click to collapse" */
+  html[data-sidebar="open"] header button[title="Toggle sidebar"]::after,
+  html[data-sidebar="open"] header button[aria-label="Toggle sidebar"]::after,
+  html[data-sidebar="open"] header button[data-testid="stSidebarCollapseButton"]::after {
     content: "Click to collapse";
   }
 </style>
+
+<!-- JS: osserva lo stato della sidebar e aggiorna data-sidebar su <html> -->
+<script>
+(function () {
+  function setFlag() {
+    var sb = document.querySelector('[data-testid="stSidebar"]');
+    if (!sb) return;
+    var expanded = sb.getAttribute('aria-expanded') === 'true';
+    document.documentElement.setAttribute('data-sidebar', expanded ? 'open' : 'closed');
+  }
+
+  function initObserver() {
+    setFlag();
+    var mo = new MutationObserver(function(muts){
+      for (var m of muts) {
+        if (m.type === 'attributes' && m.attributeName === 'aria-expanded') {
+          setFlag();
+        }
+      }
+    });
+    var sb = document.querySelector('[data-testid="stSidebar"]');
+    if (sb) {
+      mo.observe(sb, { attributes: true });
+    }
+  }
+
+  // prova finché la sidebar non è disponibile
+  var tries = 0;
+  var iv = setInterval(function(){
+    tries++;
+    if (document.querySelector('[data-testid="stSidebar"]')) {
+      clearInterval(iv);
+      initObserver();
+    }
+    if (tries > 50) clearInterval(iv); // ~10s timeout
+  }, 200);
+
+  window.addEventListener('load', setFlag);
+})();
+</script>
 """, unsafe_allow_html=True)
 
 # 3) Sidebar: SOLO il bottone richiesto
@@ -100,7 +130,7 @@ def strip_accents(s):
     return ''.join(ch for ch in unicodedata.normalize('NFD', s) if not unicodedata.combining(ch))
 
 def build_spacing_pattern(term):
-    return r"(?<!\w)" + ''.join([re.escape(c) + r"\s*" for c in term]) + r"(?!\w)"
+    return r"(?<!\\w)" + ''.join([re.escape(c) + r"\\s*" for c in term]) + r"(?!\\w)"
 
 # Inizializza lo stato per input e uploader
 if 'uploader_key' not in st.session_state:
@@ -112,14 +142,11 @@ st.session_state.setdefault('download_bytes', b'')
 st.session_state.setdefault('download_filename', '')
 
 def clear_all():
-    # Svuota TUTTI i campi delle celle
     for i in range(1, 11):
         st.session_state[f'term{i}'] = ''
-    # Svuota filename e download
     st.session_state['custom_filename'] = ''
     st.session_state['download_bytes'] = b''
     st.session_state['download_filename'] = ''
-    # Resetta anche il file uploader
     st.session_state['uploader_key'] += 1
 
 # ------------ UI ------------
@@ -133,25 +160,21 @@ st.markdown("""
 - Click **Search and Download** to get the filtered Excel + report.
 """)
 
-# Clear: svuota tutto e ricarica la pagina per riflettere subito i cambi
 if st.button("Clear cache and data"):
     clear_all()
     st.rerun()
 
-# Uploader con chiave variabile per poterlo resettare
 uploaded_file = st.file_uploader(
     "Choose an Excel file", type=["xlsx", "xls"],
     key=f'uploaded_file_{st.session_state["uploader_key"]}'
 )
 
-# Inputs vincolati allo stato (così si possono svuotare)
 for i in range(1, 11):
     st.text_input(f"Term {i}", key=f'term{i}')
 custom_filename = st.text_input("Output filename", key="custom_filename")
 
 # ------------ Azione: cerca e prepara il file ------------
 if st.button("Search and Download"):
-    # Costruisci lista termini puliti
     terms = [st.session_state[f'term{i}'].strip() for i in range(1, 11) if st.session_state[f'term{i}'].strip()]
 
     if not uploaded_file:
@@ -163,7 +186,6 @@ if st.button("Search and Download"):
 
     st.info("Reading file progressively — please wait...")
 
-    # compile patterns
     term_noacc = [strip_accents(t) for t in terms]
     term_compact = [re.sub(r"\\s+", "", t) for t in term_noacc]
     compiled = [re.compile(build_spacing_pattern(t), re.IGNORECASE) for t in term_compact]
@@ -193,7 +215,6 @@ if st.button("Search and Download"):
             row_dict["Matched terms"] = ";".join(row_hits)
             matches.append(row_dict)
         if i % 1000 == 0:
-            # ws.max_row può essere None in read_only; gestiamo il caso robustamente
             total_rows = ws.max_row or (i + 1)
             progress.progress(min(1.0, i / total_rows))
 
@@ -210,7 +231,6 @@ if st.button("Search and Download"):
     st.success(f"Matched {matched} rows out of ~{total} scanned.")
     st.dataframe(report_df, use_container_width=True)
 
-    # Buffer -> salva in sessione per tenere il bottone
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         result_df.to_excel(writer, sheet_name="Filtered", index=False)
