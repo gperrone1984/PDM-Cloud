@@ -24,29 +24,143 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
 
 # Page content
 
-# --- Script per chiudere completamente la sidebar con la freccia ---
+# --- Global CSS to hide default navigation and set sidebar width ---
+st.markdown(
+    """
+    <style>
+  /* Sidebar: grigio pieno, altezza schermo, larghezza fissa */
+  aside[data-testid="stSidebar"] {
+    background-color: #f2f3f5 !important;        /* colore dell’intera colonna */
+    width: 540px !important;                     /* blocca la larghezza */
+    min-width: 540px !important;
+    max-width: 540px !important;
+    height: 100vh !important;                    /* occupa tutto lo schermo */
+    position: sticky !important;                 /* resta “ancorata” in alto */
+    top: 0 !important;
+    overflow-y: auto !important;                 /* scroll interno se serve */
+    border-right: 1px solid rgba(0,0,0,0.06);    /* (opz.) separatore sottile */
+    transition: all 0.5s ease-in-out !important; /* transizione fluida */
+    z-index: 9999 !important;
+  }
+
+  /* Contenuto interno sidebar */
+  [data-testid="stSidebar"] > div:first-child {
+    background-color: #f2f3f5 !important;         /* grigio su tutta l’altezza */
+    height: 100vh !important;
+    overflow-y: auto !important;
+    position: sticky !important;
+    top: 0 !important;
+  }
+
+  /* Evita elementi interni bianchi che “bucano” il grigio */
+  [data-testid="stSidebar"] .block-container {
+    background: transparent !important;
+  }
+
+  /* Hide the auto-generated Streamlit sidebar navigation */
+  [data-testid="stSidebarNav"] {
+      display: none !important;
+  }
+
+  /* Make the internal container transparent while keeping padding/radius */
+  div[data-testid="stAppViewContainer"] > section > div.block-container {
+       background-color: transparent !important;
+       padding: 2rem 1rem 1rem 1rem !important;
+       border-radius: 0.5rem !important;
+  }
+  .main .block-container {
+       background-color: transparent !important;
+       padding: 2rem 1rem 1rem 1rem !important;
+       border-radius: 0.5rem !important;
+  }
+
+  /* Base style for app buttons/placeholder (from hub) - Adapted to the theme */
+  .app-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 1.5rem;
+  }
+  .app-button-link, .app-button-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.2rem 1.5rem;
+      border-radius: 0.5rem;
+      text-decoration: none;
+      font-weight: bold;
+      font-size: 1.05rem;
+      width: 90%;
+      min-height: 100px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      margin-bottom: 0.75rem;
+      text-align: center;
+      line-height: 1.4;
+      transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      border: 1px solid var(--border-color, #cccccc);
+  }
+  .app-button-link svg, .app-button-placeholder svg,
+  .app-button-link .icon, .app-button-placeholder .icon {
+       margin-right: 0.6rem;
+       flex-shrink: 0;
+  }
+  .app-button-link > div[data-testid="stText"] > span:before {
+      content: "" !important; margin-right: 0 !important;
+  }
+  .app-button-link {
+      cursor: pointer;
+  }
+  .app-button-link:hover {
+      box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+  }
+  .app-button-placeholder {
+      opacity: 0.7;
+      cursor: default;
+      box-shadow: none;
+      border-style: dashed;
+  }
+  .app-button-placeholder .icon {
+       font-size: 1.5em;
+  }
+  .app-description {
+      font-size: 0.9em;
+      padding: 0 15px;
+      text-align: justify;
+      width: 90%;
+      margin: 0 auto;
+  }
+
+  /* =============== Sidebar Hide / Show Styles =============== */
+  aside[data-testid="stSidebar"].sidebar-closed {
+      margin-left: -600px !important;
+      transform: translateX(-100%) !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      width: 0 !important;
+      min-width: 0 !important;
+      max-width: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+  }
+
+  /* Nasconde la freccia quando la sidebar è chiusa */
+  .hidden-toggle {
+      display: none !important;
+  }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# --- Button to go back to the Hub in the Sidebar ---
+st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
+st.sidebar.markdown("---")  # Separator
+
+
+# --- Script: Chiudi completamente la sidebar ---
 st.markdown("""
-<style>
-/* Quando la sidebar è chiusa: spostata completamente fuori dallo schermo */
-aside[data-testid="stSidebar"].sidebar-closed {
-    margin-left: -600px !important;
-    transform: translateX(-100%) !important;
-    opacity: 0 !important;
-    visibility: hidden !important;
-    width: 0 !important;
-    min-width: 0 !important;
-    max-width: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-
-/* Nasconde la freccia quando la sidebar è chiusa */
-.hidden-toggle {
-    display: none !important;
-}
-</style>
-
 <script>
 const wait = setInterval(() => {
   const sidebar = window.parent.document.querySelector('aside[data-testid="stSidebar"]');
@@ -56,17 +170,17 @@ const wait = setInterval(() => {
     clearInterval(wait);
 
     toggleBtn.addEventListener("click", () => {
-      // Se la sidebar è aperta → chiudi completamente e nascondi freccia
+      // Se la sidebar è aperta → chiudi completamente e nascondi la freccia
       if (!sidebar.classList.contains("sidebar-closed")) {
         sidebar.classList.add("sidebar-closed");
         toggleBtn.classList.add("hidden-toggle");
       } 
-      // Se è chiusa → riapri e mostra di nuovo freccia
+      // Se è chiusa → riapri e mostra di nuovo la freccia
       else {
         sidebar.classList.remove("sidebar-closed");
         setTimeout(() => {
           toggleBtn.classList.remove("hidden-toggle");
-        }, 400);
+        }, 400); // riappare con leggero ritardo per effetto fluido
       }
     });
   }
