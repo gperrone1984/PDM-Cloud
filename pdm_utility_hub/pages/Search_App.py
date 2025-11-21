@@ -23,9 +23,9 @@ st.markdown("""
 
 /* Sidebar: aspetto base */
 aside[data-testid="stSidebar"] {
-    width: 550px !important;
-    min-width: 550px !important;
-    max-width: 550px !important;
+    width: 400px !important;
+    min-width: 400px !important;
+    max-width: 400px !important;
     background-color: #ecf0f1 !important;
     padding: 10px !important;
     transition: all 0.5s ease-in-out !important;
