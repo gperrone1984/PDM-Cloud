@@ -49,71 +49,57 @@ st.set_page_config(
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# --- CSS Globale per sidebar e contenuto ---
+import streamlit as st
+
+# --- CSS Globale per nascondere navigazione default e impostare larghezza sidebar ---
 st.markdown(
     """
     <style>
-   /* --- Sidebar: aspetto e posizione --- */
-   aside[data-testid="stSidebar"] {
-      background-color: #f2f3f5 !important;
-      width: 540px !important;
+   [data-testid="stSidebar"] {
+      background-color: #f2f3f5 !important;        /* colore dell’intera colonna */
+      width: 540px !important;                     /* blocca la larghezza */
       min-width: 540px !important;
       max-width: 540px !important;
-      height: 100vh !important;
-      position: sticky !important;
+      height: 100vh !important;                    /* occupa tutto lo schermo */
+      position: sticky !important;                 /* resta “ancorata” in alto */
       top: 0 !important;
-      overflow-y: auto !important;
-      border-right: 1px solid rgba(0,0,0,0.06);
-      transition: all 0.5s ease-in-out !important;
+      overflow-y: auto !important;                 /* scroll interno se serve */
+      border-right: 1px solid rgba(0,0,0,0.06);    /* separatore sottile */
+      transition: all 0.5s ease-in-out !important; /* transizione fluida */
       z-index: 9999 !important;
    }
 
    [data-testid="stSidebar"] > div:first-child {
-      background-color: #f2f3f5 !important;
+      background-color: #f2f3f5 !important;         /* grigio su tutta l’altezza */
       height: 100vh !important;
       overflow-y: auto !important;
       position: sticky !important;
       top: 0 !important;
    }
 
-   [data-testid="stSidebarNav"] { display: none !important; }
-
-   /* --- Contenuto principale --- */
-   div[data-testid="stAppViewContainer"] {
-      transition: margin-left 0.5s ease-in-out !important;
-      margin-left: 540px !important; /* posizione con sidebar aperta */
+   /* Nasconde la navigazione automatica generata da Streamlit nella sidebar */
+   [data-testid="stSidebarNav"] {
+       display: none !important;
    }
 
-   /* --- Quando la sidebar è chiusa --- */
-   aside[data-testid="stSidebar"].sidebar-closed {
-      margin-left: -600px !important;
-      transform: translateX(-100%) !important;
-      opacity: 0 !important;
-      visibility: hidden !important;
-      width: 0 !important;
-      min-width: 0 !important;
-      max-width: 0 !important;
-      padding: 0 !important;
-      border: none !important;
-      box-shadow: none !important;
+   /* Rendi trasparente il contenitore interno e mantieni il padding */
+   div[data-testid="stAppViewContainer"] > section > div.block-container {
+        background-color: transparent !important;
+        padding: 2rem 1rem 1rem 1rem !important; /* Padding per contenuto */
+        border-radius: 0 !important;
+   }
+   .main .block-container {
+        background-color: transparent !important;
+        padding: 2rem 1rem 1rem 1rem !important;
+        border-radius: 0 !important;
    }
 
-   /* Sposta a sinistra il contenuto principale quando la sidebar è chiusa */
-   .sidebar-closed ~ div[data-testid="stAppViewContainer"] {
-      margin-left: 0 !important;
-   }
-
-   /* Nasconde la freccia */
-   .hidden-toggle {
-      display: none !important;
-   }
-
-   /* --- Stili app (mantieni i tuoi colori e pulsanti) --- */
+   /* Stile base per i bottoni/placeholder delle app (dall'hub) */
    .app-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin-bottom: 1.5rem;
+       display: flex;
+       flex-direction: column;
+       align-items: center;
+       margin-bottom: 1.5rem;
    }
    .app-button-link, .app-button-placeholder {
        display: flex;
@@ -133,6 +119,16 @@ st.markdown(
        transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
        color: #343a40;
    }
+    .app-button-link svg, .app-button-placeholder svg,
+    .app-button-link .icon, .app-button-placeholder .icon {
+        margin-right: 0.6rem;
+        flex-shrink: 0;
+    }
+   .app-button-link > div[data-testid="stText"] > span:before {
+       content: "" !important; margin-right: 0 !important;
+   }
+
+   /* Colore UNICO per entrambi i bottoni cliccabili (dall'hub) */
    .app-button-link {
        background-color: #f5faff;
        border: 1px solid #c4daee;
@@ -143,6 +139,8 @@ st.markdown(
        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
        cursor: pointer;
    }
+
+   /* Stile Placeholder Coming Soon (non cliccabile) */
    .app-button-placeholder {
        background-color: #f1f3f5;
        opacity: 0.7;
@@ -151,57 +149,117 @@ st.markdown(
        color: #868e96;
        border: 1px dashed #cccccc;
    }
-   .app-button-placeholder .icon {
-       font-size: 1.5em;
-   }
-   .app-description {
+    .app-button-placeholder .icon {
+        font-size: 1.5em;
+    }
+
+   /* Stile per descrizione sotto i bottoni */
+    .app-description {
        font-size: 0.9em;
        color: #343a40;
        padding: 0 15px;
        text-align: justify;
        width: 90%;
        margin: 0 auto;
-   }
-   </style>
+    }
+
+    /* Titoli e sottotitoli nella sidebar */
+    .sidebar-title {
+        font-size: 36px !important;
+        font-weight: bold !important;
+        color: #2c3e50;
+        margin-bottom: 0px;
+    }
+    .sidebar-subtitle {
+        font-size: 18px !important;
+        font-weight: bold !important;
+        color: #2c3e50;
+        margin-top: 10px;
+        margin-bottom: 5px;
+    }
+    .sidebar-desc {
+        font-size: 16px;
+        color: #2c3e50;
+        margin-top: 5px;
+        margin-bottom: 20px;
+    }
+    .stDownloadButton>button {
+        background-color: #3498db;
+        color: black;
+        font-weight: bold;
+        border: none;
+        padding: 10px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+    }
+    .server-select-label {
+        font-size: 20px;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+    [data-testid="stSidebar"] > div:first-child {
+         background-color: #ecf0f1 !important;
+         padding: 10px !important;
+    }
+
+    /* ====== Sidebar Hide / Show (chiusura completa) ====== */
+    aside[data-testid="stSidebar"].sidebar-closed {
+        margin-left: -600px !important;
+        transform: translateX(-100%) !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        width: 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* Nasconde la freccia quando la sidebar è chiusa */
+    .hidden-toggle {
+        display: none !important;
+    }
+
+    </style>
     """,
     unsafe_allow_html=True
 )
 
 # --- Bottone per tornare all'Hub nella Sidebar ---
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
-st.sidebar.markdown("---")
+st.sidebar.markdown("---")  # separatore
 
-# --- Script: chiudi completamente sidebar e sposta contenuto ---
+
+# --- Script: chiudi completamente la sidebar ---
 st.markdown("""
 <script>
 const wait = setInterval(() => {
   const sidebar = window.parent.document.querySelector('aside[data-testid="stSidebar"]');
   const toggleBtn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
-  const appContainer = window.parent.document.querySelector('div[data-testid="stAppViewContainer"]');
   
-  if (sidebar && toggleBtn && appContainer) {
+  if (sidebar && toggleBtn) {
     clearInterval(wait);
 
     toggleBtn.addEventListener("click", () => {
-      // Se sidebar aperta → chiudi completamente e sposta finestra a sinistra
+      // Se sidebar aperta → chiudi completamente e nascondi freccia
       if (!sidebar.classList.contains("sidebar-closed")) {
         sidebar.classList.add("sidebar-closed");
         toggleBtn.classList.add("hidden-toggle");
-        appContainer.style.marginLeft = "0";
       } 
-      // Se è chiusa → riapri e riporta finestra a destra
+      // Se sidebar chiusa → riapri e mostra di nuovo la freccia
       else {
         sidebar.classList.remove("sidebar-closed");
         setTimeout(() => {
           toggleBtn.classList.remove("hidden-toggle");
-          appContainer.style.marginLeft = "540px";
-        }, 400);
+        }, 400); // riappare con leggero ritardo
       }
     });
   }
 }, 500);
 </script>
 """, unsafe_allow_html=True)
+
 
 # ----- Sidebar Content -----
 st.sidebar.markdown("<div class='sidebar-title'>PDM Image Download and Renaming App</div>", unsafe_allow_html=True)
