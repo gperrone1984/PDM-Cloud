@@ -11,7 +11,9 @@ st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
+# ===============================
 # 2) CSS: sidebar solo con PDM Hub
+# ===============================
 st.markdown("""
 <style>
 [data-testid="stSidebarNav"] {
@@ -23,7 +25,16 @@ st.markdown("""
     max-width: 550px !important;
     background-color: #ecf0f1 !important;
     padding: 10px !important;
+    transition: transform 0.4s ease-in-out !important;
+    z-index: 9999 !important;
 }
+
+/* Quando la sidebar è nascosta */
+.sidebar-hidden {
+    transform: translateX(-100%) !important;
+}
+
+/* Sfondo principale */
 section.main {
     background-color: #d8dfe6 !important;
 }
@@ -36,9 +47,41 @@ div[data-testid="stAppViewContainer"] > section > div.block-container {
 </style>
 """, unsafe_allow_html=True)
 
-# 3) Sidebar: SOLO il bottone richiesto
+
+# =========================
+# 3) Sidebar: solo il bottone
+# =========================
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
+
+
+# =========================
+# 4) Script: chiusura totale
+# =========================
+st.markdown("""
+<script>
+const observer = new MutationObserver(() => {
+  const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+  const toggleBtn = window.parent.document.querySelector('button[data-testid="collapsedControl"]');
+  
+  if (sidebar && toggleBtn) {
+    observer.disconnect();
+
+    // Quando si clicca la freccia, nasconde o mostra completamente la sidebar
+    toggleBtn.addEventListener('click', () => {
+      if (sidebar.classList.contains('sidebar-hidden')) {
+        sidebar.classList.remove('sidebar-hidden');
+      } else {
+        sidebar.classList.add('sidebar-hidden');
+      }
+    });
+  }
+});
+
+// Osserva il DOM finché gli elementi non vengono caricati
+observer.observe(window.parent.document.body, { childList: true, subtree: true });
+</script>
+""", unsafe_allow_html=True)
 
 # ------------ Helpers & State ------------
 
