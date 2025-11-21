@@ -11,109 +11,60 @@ st.set_page_config(page_title="Search App", page_icon="🔎", layout="centered")
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# ========== 1) CSS base ==========
+# --- CSS ---
 st.markdown("""
 <style>
-/* Nascondi il menu interno della sidebar */
-[data-testid="stSidebarNav"] {
-    display: none !important;
-}
+[data-testid="collapsedControl"] { display: none !important; } /* nasconde la freccia originale */
 
-/* Stile generale sidebar */
+#custom-toggle {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background-color: #f39c12;
+    color: white;
+    border: none;
+    border-radius: 30px;
+    padding: 8px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    z-index: 2000;
+    box-shadow: 0 0 8px rgba(0,0,0,0.3);
+    transition: all 0.3s ease-in-out;
+}
+#custom-toggle:hover {
+    background-color: #e67e22;
+    transform: scale(1.05);
+}
 [data-testid="stSidebar"] {
-    width: 300px !important;
-    min-width: 300px !important;
-    max-width: 300px !important;
-    background-color: #ecf0f1 !important;
-    padding: 10px !important;
     transition: transform 0.4s ease-in-out !important;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
-    z-index: 1000 !important;
 }
-
-/* Sfondo principale */
-section.main {
-    background-color: #d8dfe6 !important;
-}
-.main .block-container, 
-div[data-testid="stAppViewContainer"] > section > div.block-container {
-    background-color: transparent !important;
-    padding: 2rem 1rem 1rem 1rem !important;
-}
-
-/* Nasconde completamente la sidebar */
 .sidebar-hidden {
     transform: translateX(-100%) !important;
-}
-
-/* --- Stile pulsante freccia --- */
-div[data-testid="collapsedControl"] {
-    display: flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-}
-div[data-testid="collapsedControl"] button {
-    background-color: #f39c12 !important;
-    border-radius: 50% !important;
-    box-shadow: 0 0 6px rgba(0,0,0,0.3);
-    transition: all 0.3s ease-in-out !important;
-}
-div[data-testid="collapsedControl"] button:hover {
-    background-color: #e67e22 !important;
-    transform: scale(1.15);
-}
-
-/* --- Testo accanto alla freccia --- */
-#sidebar-toggle-label {
-    color: #34495e;
-    font-weight: 600;
-    font-family: "Segoe UI", sans-serif;
-    font-size: 14px;
-    user-select: none;
 }
 </style>
 """, unsafe_allow_html=True)
 
-
-# ========== 2) Sidebar ==========
+# --- Sidebar ---
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
-
-# ========== 3) JavaScript per chiusura e testo dinamico ==========
+# --- Bottone custom + script ---
 st.markdown("""
+<button id="custom-toggle">⬅️ Click to collapse</button>
+
 <script>
-const observer = new MutationObserver(() => {
-  const container = window.parent.document.querySelector('div[data-testid="collapsedControl"]');
-  const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-  if (container && sidebar) {
-    observer.disconnect();
+const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+const btn = document.getElementById("custom-toggle");
 
-    // Aggiunge testo accanto alla freccia se non esiste
-    if (!container.querySelector('#sidebar-toggle-label')) {
-      const label = document.createElement('span');
-      label.id = 'sidebar-toggle-label';
-      label.innerText = 'Click to collapse';
-      container.appendChild(label);
-    }
-
-    const btn = container.querySelector('button');
-    const label = container.querySelector('#sidebar-toggle-label');
-
-    btn.addEventListener('click', () => {
-      if (sidebar.classList.contains('sidebar-hidden')) {
-        sidebar.classList.remove('sidebar-hidden');
-        label.innerText = 'Click to collapse';
-      } else {
-        sidebar.classList.add('sidebar-hidden');
-        label.innerText = 'Click to expand';
-      }
-    });
+btn.addEventListener("click", () => {
+  if (sidebar.classList.contains("sidebar-hidden")) {
+    sidebar.classList.remove("sidebar-hidden");
+    btn.innerText = "⬅️ Click to collapse";
+  } else {
+    sidebar.classList.add("sidebar-hidden");
+    btn.innerText = "➡️ Click to expand";
   }
 });
-
-// Osserva eventuali cambiamenti nel DOM finché non trova gli elementi
-observer.observe(window.parent.document.body, { childList: true, subtree: true });
 </script>
 """, unsafe_allow_html=True)
 
