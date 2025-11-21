@@ -49,10 +49,10 @@ st.set_page_config(
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.switch_page("app.py")
 
-# --- CSS Globale + comportamento completo ---
+# --- CSS globale e comportamento sidebar ---
 st.markdown("""
 <style>
-/* Sidebar base */
+/* Sidebar */
 aside[data-testid="stSidebar"] {
     background-color: #f2f3f5 !important;
     width: 540px !important;
@@ -65,21 +65,8 @@ aside[data-testid="stSidebar"] {
 }
 [data-testid="stSidebarNav"] { display: none !important; }
 
-/* Contenitore principale: si muove con la sidebar */
-div[data-testid="stAppViewContainer"] {
-    transition: margin-left 0.5s ease-in-out !important;
-    margin-left: 540px !important;
-}
-
-/* Rimuove lo spazio bianco a sinistra del layout */
-div[data-testid="stMainBlockContainer"], div[data-testid="stVerticalBlock"] {
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-}
-
-/* Sidebar chiusa: completamente invisibile */
+/* Chiusura completa sidebar */
 aside[data-testid="stSidebar"].sidebar-closed {
-    margin-left: -600px !important;
     transform: translateX(-100%) !important;
     opacity: 0 !important;
     visibility: hidden !important;
@@ -91,21 +78,38 @@ aside[data-testid="stSidebar"].sidebar-closed {
     box-shadow: none !important;
 }
 
-/* Contenuto principale a piena larghezza quando sidebar chiusa */
-.sidebar-closed ~ div[data-testid="stAppViewContainer"] {
-    margin-left: 0 !important;
-}
-
-/* Nasconde la freccia */
+/* Nasconde la freccia quando chiusa */
 .hidden-toggle {
     display: none !important;
 }
 
-/* Styling base del corpo */
-.main .block-container,
-div[data-testid="stAppViewContainer"] > section > div.block-container {
-    background-color: transparent !important;
-    padding: 2rem 1rem 1rem 1rem !important;
+/* Sposta tutto il layout principale verso sinistra */
+div[data-testid="stAppViewContainer"],
+section.main,
+div.block-container,
+div[data-testid="stMainBlockContainer"],
+div[data-testid="stVerticalBlock"],
+div[data-testid="stDecoration"],
+header[data-testid="stHeader"],
+div[data-testid="stToolbar"] {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+}
+
+/* Contenuto principale a piena larghezza */
+div[data-testid="stAppViewContainer"] {
+    transition: margin-left 0.5s ease-in-out !important;
+    margin-left: 540px !important;
+}
+.sidebar-closed ~ div[data-testid="stAppViewContainer"] {
+    margin-left: 0 !important;
+}
+
+/* Rimuove il background bianco residuo */
+html, body, #root, .main {
+    background-color: #f2f3f5 !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -114,7 +118,7 @@ div[data-testid="stAppViewContainer"] > section > div.block-container {
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
 
-# --- Script per chiusura totale e spostamento dinamico ---
+# --- Script per chiusura totale e shift completo a sinistra ---
 st.markdown("""
 <script>
 const wait = setInterval(() => {
@@ -126,11 +130,14 @@ const wait = setInterval(() => {
     clearInterval(wait);
 
     toggleBtn.addEventListener("click", () => {
+      // Sidebar aperta → chiudi e sposta tutto a sinistra
       if (!sidebar.classList.contains("sidebar-closed")) {
         sidebar.classList.add("sidebar-closed");
         toggleBtn.classList.add("hidden-toggle");
         appContainer.style.marginLeft = "0";
-      } else {
+      } 
+      // Sidebar chiusa → riapri e riporta posizione originale
+      else {
         sidebar.classList.remove("sidebar-closed");
         setTimeout(() => {
           toggleBtn.classList.remove("hidden-toggle");
