@@ -308,6 +308,15 @@ def save_binary_file(path, data):
     with open(path, 'wb') as f:
         f.write(data)
 
+def process_and_save_trimmed_image(image_bytes, dest_path):
+    """
+    Trimma i bordi bianchi e salva come JPEG.
+    """
+    img = Image.open(BytesIO(image_bytes))
+    img = trim(img)
+    img = img.convert("RGB")
+    img.save(dest_path, "JPEG", quality=100)
+
 async def async_get_nl_fr_images(product_code, session):
     tasks = [
         async_download_image(product_code, "1-fr", session),
@@ -515,6 +524,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 item_is_cross_country = False
                 for p_code in product_codes:
                     result, used_ext = await async_get_image_with_fallback(p_code, session)
+
                     if used_ext == "NL FR" and isinstance(result, dict):
                         item_is_cross_country = True
                         prod_folder = os.path.join(bundle_folder, "cross-country")
@@ -528,14 +538,17 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             else:
                                 suffix = f"-p{lang}"
                             file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
-                            await asyncio.to_thread(save_binary_file, file_path, image_data)
+                            # TRIM & SAVE
+                            await asyncio.to_thread(process_and_save_trimmed_image, image_data, file_path)
                             processed_keys.append(lang)
+                        # Duplicate missing language if only one is available
                         if "1-fr" not in processed_keys and "1-nl" in processed_keys:
-                             file_path_dup = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
-                             await asyncio.to_thread(save_binary_file, file_path_dup, result["1-nl"])
+                            file_path_dup = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
+                            await asyncio.to_thread(process_and_save_trimmed_image, result["1-nl"], file_path_dup)
                         elif "1-nl" not in processed_keys and "1-fr" in processed_keys:
-                             file_path_dup = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
-                             await asyncio.to_thread(save_binary_file, file_path_dup, result["1-fr"])
+                            file_path_dup = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
+                            await asyncio.to_thread(process_and_save_trimmed_image, result["1-fr"], file_path_dup)
+
                     elif result:
                         prod_folder = bundle_folder
                         if used_ext in ["1-fr", "1-de", "1-nl"]:
@@ -545,14 +558,17 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                         if st.session_state.get("fallback_ext") == "NL FR":
                             file_path_nl = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
                             file_path_fr = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
-                            await asyncio.to_thread(save_binary_file, file_path_nl, result)
-                            await asyncio.to_thread(save_binary_file, file_path_fr, result)
+                            # TRIM & SAVE both
+                            await asyncio.to_thread(process_and_save_trimmed_image, result, file_path_nl)
+                            await asyncio.to_thread(process_and_save_trimmed_image, result, file_path_fr)
                         else:
                             suffix = f"-p{used_ext}" if used_ext else "-h1"
                             file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
-                            await asyncio.to_thread(save_binary_file, file_path, result)
+                            # TRIM & SAVE
+                            await asyncio.to_thread(process_and_save_trimmed_image, result, file_path)
                     else:
                         error_list.append((bundle_code, p_code))
+
                 if item_is_cross_country:
                     bundle_cross_country = True
 
@@ -578,7 +594,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
             with open(missing_images_excel_path, "rb") as f_csv:
                 missing_images_data = f_csv.read()
         except Exception as e:
-             st.error(f"Failed to save or read missing images Excel file: {e}")
+            st.error(f"Failed to save or read missing images Excel file: {e}")
 
     bundle_list_data = None
     bundle_list_df = pd.DataFrame(columns=["sku", "pzns_in_set", "bundle type", "cross-country"])
@@ -612,7 +628,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                     zip_bytes = zip_file.read()
                 os.remove(final_zip_path)
             else:
-                 st.error("Failed to create ZIP archive (file not found after creation attempt).")
+                st.error("Failed to create ZIP archive (file not found after creation attempt).")
         except Exception as e:
             st.error(f"Error during zipping process: {e}")
         finally:
@@ -622,14 +638,14 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 except Exception as e:
                     st.warning(f"Could not remove temporary zip folder {temp_parent}: {e}")
     elif os.path.exists(base_folder):
-         st.info("Processing complete, but no images were saved to create a ZIP file.")
-         try:
-             os.rmdir(base_folder)
-         except OSError:
-             try:
-                 shutil.rmtree(base_folder)
-             except Exception as e:
-                 st.warning(f"Could not remove base folder {base_folder}: {e}")
+        st.info("Processing complete, but no images were saved to create a ZIP file.")
+        try:
+            os.rmdir(base_folder)
+        except OSError:
+            try:
+                shutil.rmtree(base_folder)
+            except Exception as e:
+                st.warning(f"Could not remove base folder {base_folder}: {e}")
 
     return zip_bytes, missing_images_data, missing_images_df, bundle_list_data
 
@@ -646,7 +662,7 @@ st.markdown(
        - File Type: **CSV** or **Excel** - All Attributes or Grid Context (for Grid Context, select ID and PZN included in the set) - **With Codes** - **Without Media**
     3. **Choose the language for language specific photos:** (if needed)
     4. **Choose bundle layout:** (Horizontal, Vertical, or Automatic)
-    5. Click **Process CSV** to start the process.
+    5. Click **Process File** to start the process.
     6. Download the files.
     7. **Before starting a new process, click on Clear Cache and Reset Data.**
     """
@@ -672,7 +688,7 @@ if st.button("🧹 Clear Cache and Reset Data"):
         st.warning(f"Error during clear_old_data: {e}")
     st.success("Cache and session data cleared. Ready for a new task.")
     if "bundle_creator_session_id" not in st.session_state:
-         st.session_state["bundle_creator_session_id"] = str(uuid.uuid4())
+        st.session_state["bundle_creator_session_id"] = str(uuid.uuid4())
     time.sleep(1)
     st.rerun()
 
@@ -684,7 +700,7 @@ st.sidebar.markdown(
     - 🔎 **Choose the layout for double/triple bundles:** Automatic, Horizontal or Vertical;
     - ✏️ **Dynamic Processing:** Combine images (double/triple) with proper resizing;
     - ✏️ **Rename images** using the specific bundle&set code (e.g. -h1, -p1-fr, -p1-nl, etc);
-    - ❌ **Error Logging:** Missing images are logged in a CSV ;
+    - ❌ **Error Logging:** Missing images are logged in an Excel;
     - 📥 **Download:** Get a ZIP with all processed images and reports;
     - 🌐 **Interactive Preview:** Preview and download individual product images from the sidebar.
     """, unsafe_allow_html=True
@@ -714,7 +730,7 @@ if show_image and product_code_preview:
                 import requests
                 response = requests.get(preview_url, stream=True, timeout=10)
                 if response.status_code == 200:
-                     image_data = response.content
+                    image_data = response.content
                 else:
                     fetch_status_code = response.status_code
             except requests.exceptions.RequestException as e:
@@ -736,11 +752,11 @@ if show_image and product_code_preview:
                 key="dl_preview_bundle"
             )
         except Exception as e:
-             st.sidebar.error(f"Could not display preview image: {e}")
+            st.sidebar.error(f"Could not display preview image: {e}")
     elif 'fetch_status_code' in locals() and fetch_status_code == 404:
-         st.sidebar.warning(f"No image found (404) for {product_code_preview} with -p{selected_extension}.jpg")
+        st.sidebar.warning(f"No image found (404) for {product_code_preview} with -p{selected_extension}.jpg")
     elif 'fetch_status_code' in locals() and fetch_status_code is not None:
-         st.sidebar.error(f"Failed to fetch image (Status: {fetch_status_code}) for {product_code_preview} with -p{selected_extension}.jpg")
+        st.sidebar.error(f"Failed to fetch image (Status: {fetch_status_code}) for {product_code_preview} with -p{selected_extension}.jpg")
 
 uploaded_file = st.file_uploader("**Upload CSV File**", type=["csv", "xlsx"], key="file_uploader")
 if uploaded_file is not None:
@@ -749,6 +765,7 @@ if uploaded_file is not None:
         fallback_language = st.selectbox("**Choose the language for language specific photos:**", options=["None", "FR", "DE", "NL FR"], index=0, key="lang_select_bundle")
     with col2:
         layout_choice = st.selectbox("**Choose bundle layout:**", options=["Automatic", "Horizontal", "Vertical"], index=0, key="layout_select_bundle")
+
     if fallback_language == "NL FR":
         st.session_state["fallback_ext"] = "NL FR"
     elif fallback_language != "None":
@@ -756,7 +773,8 @@ if uploaded_file is not None:
     else:
         if "fallback_ext" in st.session_state:
             del st.session_state["fallback_ext"]
-    if st.button("Process CSV", key="process_csv_bundle"):
+
+    if st.button("Process File", key="process_csv_bundle"):
         start_time = time.time()
         progress_bar = st.progress(0, text="Starting processing...")
         st.session_state["zip_data"] = None
@@ -766,8 +784,8 @@ if uploaded_file is not None:
         st.session_state["processing_complete_bundle"] = False
         try:
             if 'process_file_async' not in globals():
-                 st.error("Critical error: Processing function is not defined.")
-                 st.stop()
+                st.error("Critical error: Processing function is not defined.")
+                st.stop()
             zip_data, missing_images_data, missing_images_df, bundle_list_data = asyncio.run(
                 process_file_async(uploaded_file, progress_bar, layout=layout_choice)
             )
@@ -784,11 +802,11 @@ if uploaded_file is not None:
             time.sleep(1.5)
             progress_bar.empty()
         except Exception as e:
-             progress_bar.empty()
-             st.error(f"An error occurred during processing: {e}")
-             import traceback
-             st.error(f"Traceback: {traceback.format_exc()}")
-             st.session_state["processing_complete_bundle"] = False
+            progress_bar.empty()
+            st.error(f"An error occurred during processing: {e}")
+            import traceback
+            st.error(f"Traceback: {traceback.format_exc()}")
+            st.session_state["processing_complete_bundle"] = False
 
 if st.session_state.get("processing_complete_bundle", False):
     st.markdown("---")
@@ -802,7 +820,7 @@ if st.session_state.get("processing_complete_bundle", False):
         )
     else:
         if st.session_state.get("processing_complete_bundle", False):
-             st.info("Processing complete, but no ZIP file was generated (likely no images saved).")
+            st.info("Processing complete, but no ZIP file was generated (likely no images saved).")
     if st.session_state.get("bundle_list_data"):
         st.download_button(
             label="Download Bundle List",
@@ -829,4 +847,4 @@ if st.session_state.get("processing_complete_bundle", False):
                     key="dl_missing_bundle_v"
                 )
         else:
-             st.success("No missing images reported.")
+            st.success("No missing images reported.")
