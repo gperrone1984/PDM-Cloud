@@ -228,6 +228,11 @@ async def async_download_image(product_code, extension, session):
     except Exception:
         return None, None
 
+# Limita il numero di download simultanei
+async def limited_async_download(product_code, extension, session, semaphore):
+    async with semaphore:
+        return await async_download_image(product_code, extension, session)
+
 def trim(im):
     bg = Image.new(im.mode, im.size, (255, 255, 255))
     diff = ImageChops.difference(im, bg)
@@ -320,10 +325,10 @@ def process_and_save_trimmed_image(image_bytes, dest_path):
     img = img.convert("RGB")
     img.save(dest_path, "JPEG", quality=JPEG_QUALITY)
 
-async def async_get_nl_fr_images(product_code, session):
+async def async_get_nl_fr_images(product_code, session, semaphore):
     tasks = [
-        async_download_image(product_code, "1-fr", session),
-        async_download_image(product_code, "1-nl", session)
+        limited_async_download(product_code, "1-fr", session, semaphore),
+        limited_async_download(product_code, "1-nl", session, semaphore)
     ]
     results = await asyncio.gather(*tasks)
     images = {}
@@ -333,20 +338,23 @@ async def async_get_nl_fr_images(product_code, session):
         images["1-nl"] = results[1][0]
     return images
 
-async def async_get_image_with_fallback(product_code, session):
+async def async_get_image_with_fallback(product_code, session, semaphore):
     fallback_ext = st.session_state.get("fallback_ext", None)
     if fallback_ext == "NL FR":
-        images_dict = await async_get_nl_fr_images(product_code, session)
+        images_dict = await async_get_nl_fr_images(product_code, session, semaphore)
         if images_dict:
             return images_dict, "NL FR"
-    tasks = [async_download_image(product_code, ext, session) for ext in ["1", "10"]]
+    tasks = [
+        limited_async_download(product_code, ext, session, semaphore)
+        for ext in ["1", "10"]
+    ]
     results = await asyncio.gather(*tasks)
     for ext, result in zip(["1", "10"], results):
         content, url = result
         if content:
             return content, ext
     if fallback_ext and fallback_ext != "NL FR":
-        content, _ = await async_download_image(product_code, fallback_ext, session)
+        content, _ = await limited_async_download(product_code, fallback_ext, session, semaphore)
         if content:
             return content, fallback_ext
     return None, None
@@ -357,6 +365,9 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
     base_folder = f"Bundle&Set_{session_id}"
     missing_images_excel_path = f"missing_images_{session_id}.xlsx"
     bundle_list_excel_path = f"bundle_list_{session_id}.xlsx"
+
+    # Semaforo per limitare il numero di richieste simultanee
+    semaphore = asyncio.Semaphore(50)
 
     if "encryption_key" not in st.session_state:
         st.session_state["encryption_key"] = Fernet.generate_key()
@@ -400,7 +411,8 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
     bundle_list = []
     total = len(data)
 
-    connector = aiohttp.TCPConnector(limit=100)
+    # Aumentiamo il limite delle connessioni HTTP
+    connector = aiohttp.TCPConnector(limit=300)
     async with aiohttp.ClientSession(connector=connector) as session:
         for i, (_, row) in enumerate(data.iterrows()):
             bundle_code = str(row['sku']).strip()
@@ -425,7 +437,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 folder_name = os.path.join(base_folder, folder_name_base)
                 os.makedirs(folder_name, exist_ok=True)
 
-                result, used_ext = await async_get_image_with_fallback(product_code, session)
+                result, used_ext = await async_get_image_with_fallback(product_code, session, semaphore)
 
                 # --- Uniform Bundle: NL FR dictionary result with duplicate creation if only one exists ---
                 if used_ext == "NL FR" and isinstance(result, dict):
@@ -526,7 +538,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 os.makedirs(bundle_folder, exist_ok=True)
                 item_is_cross_country = False
                 for p_code in product_codes:
-                    result, used_ext = await async_get_image_with_fallback(p_code, session)
+                    result, used_ext = await async_get_image_with_fallback(p_code, session, semaphore)
 
                     if used_ext == "NL FR" and isinstance(result, dict):
                         item_is_cross_country = True
