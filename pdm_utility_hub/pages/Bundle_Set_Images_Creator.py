@@ -10,7 +10,7 @@ import time
 from io import BytesIO
 from PIL import Image, ImageChops
 from cryptography.fernet import Fernet
-import concurrent.futures  # NEW
+import concurrent.futures  # per ThreadPoolExecutor
 
 # Page configuration (MUST be the first operation)
 st.set_page_config(
@@ -444,15 +444,18 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                         else:
                             suffix = f"-p{lang}"
                         try:
-                            img = await loop.run_in_executor(executor, Image.open, BytesIO(image_data))
+                            img = Image.open(BytesIO(image_data))
                             if num_products == 2:
-                                final_img = await loop.run_in_executor(executor, process_double_bundle_image, img, layout)
+                                final_img = process_double_bundle_image(img, layout)
                             elif num_products == 3:
-                                final_img = await loop.run_in_executor(executor, process_triple_bundle_image, img, layout)
+                                final_img = process_triple_bundle_image(img, layout)
                             else:
                                 final_img = img
                             save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
-                            await loop.run_in_executor(executor, final_img.save, save_path, "JPEG", JPEG_QUALITY)
+                            await loop.run_in_executor(
+                                executor,
+                                lambda p=save_path, im=final_img: im.save(p, format="JPEG", quality=JPEG_QUALITY)
+                            )
                             processed_lang = True
                             processed_keys.append(lang)
                         except Exception as e:
@@ -462,29 +465,35 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                     if processed_lang:
                         if "1-fr" not in processed_keys and "1-nl" in processed_keys:
                             try:
-                                img_dup = await loop.run_in_executor(executor, Image.open, BytesIO(result["1-nl"]))
+                                img_dup = Image.open(BytesIO(result["1-nl"]))
                                 if num_products == 2:
-                                    final_img_dup = await loop.run_in_executor(executor, process_double_bundle_image, img_dup, layout)
+                                    final_img_dup = process_double_bundle_image(img_dup, layout)
                                 elif num_products == 3:
-                                    final_img_dup = await loop.run_in_executor(executor, process_triple_bundle_image, img_dup, layout)
+                                    final_img_dup = process_triple_bundle_image(img_dup, layout)
                                 else:
                                     final_img_dup = img_dup
                                 dup_save_path = os.path.join(folder_name, f"{bundle_code}-fr-h1.jpg")
-                                await loop.run_in_executor(executor, final_img_dup.save, dup_save_path, "JPEG", JPEG_QUALITY)
+                                await loop.run_in_executor(
+                                    executor,
+                                    lambda p=dup_save_path, im=final_img_dup: im.save(p, format="JPEG", quality=JPEG_QUALITY)
+                                )
                             except Exception as e:
                                 st.warning(f"Error duplicating image for missing 1-fr for bundle {bundle_code} (PZN: {product_code}): {e}")
                                 error_list.append((bundle_code, f"{product_code} (dup 1-fr processing error)"))
                         elif "1-nl" not in processed_keys and "1-fr" in processed_keys:
                             try:
-                                img_dup = await loop.run_in_executor(executor, Image.open, BytesIO(result["1-fr"]))
+                                img_dup = Image.open(BytesIO(result["1-fr"]))
                                 if num_products == 2:
-                                    final_img_dup = await loop.run_in_executor(executor, process_double_bundle_image, img_dup, layout)
+                                    final_img_dup = process_double_bundle_image(img_dup, layout)
                                 elif num_products == 3:
-                                    final_img_dup = await loop.run_in_executor(executor, process_triple_bundle_image, img_dup, layout)
+                                    final_img_dup = process_triple_bundle_image(img_dup, layout)
                                 else:
                                     final_img_dup = img_dup
                                 dup_save_path = os.path.join(folder_name, f"{bundle_code}-nl-h1.jpg")
-                                await loop.run_in_executor(executor, final_img_dup.save, dup_save_path, "JPEG", JPEG_QUALITY)
+                                await loop.run_in_executor(
+                                    executor,
+                                    lambda p=dup_save_path, im=final_img_dup: im.save(p, format="JPEG", quality=JPEG_QUALITY)
+                                )
                             except Exception as e:
                                 st.warning(f"Error duplicating image for missing 1-nl for bundle {bundle_code} (PZN: {product_code}): {e}")
                                 error_list.append((bundle_code, f"{product_code} (dup 1-nl processing error)"))
@@ -498,22 +507,31 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                         folder_name = os.path.join(base_folder, "cross-country")
                         os.makedirs(folder_name, exist_ok=True)
                     try:
-                        img = await loop.run_in_executor(executor, Image.open, BytesIO(result))
+                        img = Image.open(BytesIO(result))
                         if num_products == 2:
-                            final_img = await loop.run_in_executor(executor, process_double_bundle_image, img, layout)
+                            final_img = process_double_bundle_image(img, layout)
                         elif num_products == 3:
-                            final_img = await loop.run_in_executor(executor, process_triple_bundle_image, img, layout)
+                            final_img = process_triple_bundle_image(img, layout)
                         else:
                             final_img = img
 
                         if st.session_state.get("fallback_ext") == "NL FR":
                             save_path_nl = os.path.join(folder_name, f"{bundle_code}-nl-h1.jpg")
                             save_path_fr = os.path.join(folder_name, f"{bundle_code}-fr-h1.jpg")
-                            await loop.run_in_executor(executor, final_img.save, save_path_nl, "JPEG", JPEG_QUALITY)
-                            await loop.run_in_executor(executor, final_img.save, save_path_fr, "JPEG", JPEG_QUALITY)
+                            await loop.run_in_executor(
+                                executor,
+                                lambda p=save_path_nl, im=final_img: im.save(p, format="JPEG", quality=JPEG_QUALITY)
+                            )
+                            await loop.run_in_executor(
+                                executor,
+                                lambda p=save_path_fr, im=final_img: im.save(p, format="JPEG", quality=JPEG_QUALITY)
+                            )
                         else:
                             save_path = os.path.join(folder_name, f"{bundle_code}-h1.jpg")
-                            await loop.run_in_executor(executor, final_img.save, save_path, "JPEG", JPEG_QUALITY)
+                            await loop.run_in_executor(
+                                executor,
+                                lambda p=save_path, im=final_img: im.save(p, format="JPEG", quality=JPEG_QUALITY)
+                            )
                     except Exception as e:
                         st.warning(f"Error processing image for bundle {bundle_code} (PZN: {product_code}, Ext: {used_ext}): {e}")
                         error_list.append((bundle_code, f"{product_code} (Ext: {used_ext} processing error)"))
@@ -543,15 +561,31 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             else:
                                 suffix = f"-p{lang}"
                             file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
-                            await loop.run_in_executor(executor, process_and_save_trimmed_image, image_data, file_path)
+                            # trimming + save (sync) ma eseguito nel thread pool
+                            await loop.run_in_executor(
+                                executor,
+                                process_and_save_trimmed_image,
+                                image_data,
+                                file_path
+                            )
                             processed_keys.append(lang)
 
                         if "1-fr" not in processed_keys and "1-nl" in processed_keys:
                             file_path_dup = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
-                            await loop.run_in_executor(executor, process_and_save_trimmed_image, result["1-nl"], file_path_dup)
+                            await loop.run_in_executor(
+                                executor,
+                                process_and_save_trimmed_image,
+                                result["1-nl"],
+                                file_path_dup
+                            )
                         elif "1-nl" not in processed_keys and "1-fr" in processed_keys:
                             file_path_dup = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
-                            await loop.run_in_executor(executor, process_and_save_trimmed_image, result["1-fr"], file_path_dup)
+                            await loop.run_in_executor(
+                                executor,
+                                process_and_save_trimmed_image,
+                                result["1-fr"],
+                                file_path_dup
+                            )
 
                     elif result:
                         prod_folder = bundle_folder
@@ -563,12 +597,27 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                         if st.session_state.get("fallback_ext") == "NL FR":
                             file_path_nl = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
                             file_path_fr = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
-                            await loop.run_in_executor(executor, process_and_save_trimmed_image, result, file_path_nl)
-                            await loop.run_in_executor(executor, process_and_save_trimmed_image, result, file_path_fr)
+                            await loop.run_in_executor(
+                                executor,
+                                process_and_save_trimmed_image,
+                                result,
+                                file_path_nl
+                            )
+                            await loop.run_in_executor(
+                                executor,
+                                process_and_save_trimmed_image,
+                                result,
+                                file_path_fr
+                            )
                         else:
                             suffix = f"-p{used_ext}" if used_ext else "-h1"
                             file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
-                            await loop.run_in_executor(executor, process_and_save_trimmed_image, result, file_path)
+                            await loop.run_in_executor(
+                                executor,
+                                process_and_save_trimmed_image,
+                                result,
+                                file_path
+                            )
                     else:
                         error_list.append((bundle_code, p_code))
 
