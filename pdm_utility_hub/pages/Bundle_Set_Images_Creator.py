@@ -211,7 +211,7 @@ def clear_old_data():
         os.remove(bundle_list_excel_path)
 
 #-------------- Quality image-----------------------------------
-JPEG_QUALITY = 85
+JPEG_QUALITY = 100
 
 # ---------------------- Helper Functions ----------------------
 async def async_download_image(product_code, extension, session):
