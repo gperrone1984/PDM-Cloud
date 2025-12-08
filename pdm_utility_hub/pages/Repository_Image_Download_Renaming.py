@@ -246,72 +246,47 @@ def get_sku_list(uploaded_file_obj, manual_text):
     return unique_sku_list
 
 # ======================================================
-# SECTION: Switzerland
+# SECTION: Switzerland (FINAL WORKING VERSION)
 # ======================================================
 if server_country == "Switzerland":
     st.header("Switzerland Server Image Processing")
-    st.markdown("""
-    :information_source: **How to use:**
 
-    - Export file from Akeneo with a column named **sku**
-    - CSV or Excel accepted
-    - Or paste SKUs manually (one per line)
-    """)
+    manual_input = st.text_area("Paste SKUs (optional):")
+    uploaded_file = st.file_uploader("Upload CSV/Excel with SKU column", type=["csv", "xlsx"])
 
-    # RESET BUTTON
-    if st.button("🧹 Clear Cache and Reset Data"):
-        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("swiss_")]
-        for key in keys_to_remove:
-            del st.session_state[key]
-        st.session_state["swiss_uploader_key"] = str(uuid.uuid4())
-        st.info("Cache cleared. Please re-upload.")
-        st.rerun()
-
-    # INPUTS
-    manual_input = st.text_area("Or paste SKUs here (one per line):", key="swiss_manual_input")
-    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", 
-                                     type=["xlsx", "csv"], 
-                                     key=st.session_state.get("swiss_uploader_key", "swiss_file"))
-
-
-    # ============================================================================
-    # UTILITY FUNCTIONS
-    # ============================================================================
+    # ------------------ UTILITIES ------------------
 
     def get_sku_list(uploaded_file, manual_input):
         sku_list = []
 
         if uploaded_file:
-            name = uploaded_file.name.lower()
-
-            # Read file as strings (VERY IMPORTANT)
-            if name.endswith(".csv"):
+            fn = uploaded_file.name.lower()
+            if fn.endswith(".csv"):
                 df = pd.read_csv(uploaded_file, dtype=str, sep=None, engine="python")
             else:
                 df = pd.read_excel(uploaded_file, dtype=str)
 
             if "sku" not in df.columns:
-                st.error("Column 'sku' not found in the file.")
+                st.error("Column 'sku' not found.")
                 return []
 
             df["sku"] = df["sku"].astype(str).str.strip()
-            df = df[df["sku"].notna() & (df["sku"] != "")]
+            df = df[df["sku"] != ""]
             sku_list.extend(df["sku"].tolist())
 
         if manual_input.strip():
-            manual_list = [x.strip() for x in manual_input.split("\n") if x.strip()]
-            sku_list.extend(manual_list)
+            manual = [x.strip() for x in manual_input.split("\n") if x.strip()]
+            sku_list.extend(manual)
 
-        return list(dict.fromkeys(sku_list))  # remove duplicates
+        return list(dict.fromkeys(sku_list))
 
 
-    # URL builder for Swiss API
-    def get_image_url(product_code):
-        pharmacode = str(product_code)
+    def get_image_url(sku):
+        pharmacode = str(sku)
         if pharmacode.upper().startswith("CH"):
             pharmacode = pharmacode[2:].lstrip("0")
         else:
-            pharmacode = pharmacode.lstrip("0")
+            pharmacode = pharmacocode.lstrip("0")
 
         if not pharmacode:
             return None
@@ -319,12 +294,12 @@ if server_country == "Switzerland":
         return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{pharmacode}/F"
 
 
-    # Image processing identical to Colab version
-    def process_and_save(sku, content, folder):
+    # ------------------ IMAGE PROCESSING ------------------
+
+    def process_image(sku, content, folder):
         try:
             img = Image.open(BytesIO(content))
 
-            # black or white image detection
             gray = img.convert("L")
             if gray.getextrema() in [(0,0), (255,255)]:
                 return False
@@ -336,131 +311,113 @@ if server_country == "Switzerland":
             bbox = diff.getbbox()
             if bbox:
                 img = img.crop(bbox)
-            if img.width == 0 or img.height == 0:
-                return False
 
             img.thumbnail((1000,1000), Image.LANCZOS)
 
             canvas = Image.new("RGB", (1000,1000), (255,255,255))
             canvas.paste(img, ((1000-img.width)//2, (1000-img.height)//2))
 
-            out_path = os.path.join(folder, f"{sku}-h1.jpg")
-            canvas.save(out_path, "JPEG", quality=75)   # QUALITY = 75
+            out = os.path.join(folder, f"{sku}-h1.jpg")
+            canvas.save(out, "JPEG", quality=75)
             return True
 
         except:
             return False
 
 
-    # Async processing
-    async def run_processing_swiss(sku_list, folder, update_progress, error_codes):
+    # ------------------ SYNC BATCH DOWNLOADER ------------------
 
-        async def fetch_one(session, sku):
-            url = get_image_url(sku)
-            if not url:
-                error_codes.append(sku)
-                update_progress()
-                return
+    def download_batch(batch, folder, error_list, progress):
+        """Process batch without async loop interruptions."""
+        connector = aiohttp.TCPConnector(limit=8)
+        async def fetch_all():
 
-            try:
-                async with session.get(url, timeout=25) as r:
-                    if r.status == 200:
-                        content = await r.read()
-                        ok = await asyncio.to_thread(process_and_save, sku, content, folder)
-                        if not ok:
-                            error_codes.append(sku)
-                    else:
-                        error_codes.append(sku)
-            except:
-                error_codes.append(sku)
+            async with aiohttp.ClientSession(connector=connector) as session:
 
-            update_progress()
+                async def fetch_one(sku):
+                    url = get_image_url(sku)
+                    if not url:
+                        error_list.append(sku)
+                        return
 
-        connector = aiohttp.TCPConnector(limit=8)  # SAFE AND STABLE
-        async with aiohttp.ClientSession(connector=connector) as session:
-            tasks = [fetch_one(session, sku) for sku in sku_list]
-            await asyncio.gather(*tasks)
+                    try:
+                        async with session.get(url, timeout=25) as r:
+                            if r.status == 200:
+                                content = await r.read()
+                                ok = await asyncio.to_thread(process_image, sku, content, folder)
+                                if not ok:
+                                    error_list.append(sku)
+                            else:
+                                error_list.append(sku)
+                    except:
+                        error_list.append(sku)
+
+                tasks = [fetch_one(sku) for sku in batch]
+                await asyncio.gather(*tasks)
+
+        # RUN ASYNC WITHOUT IMPACTING STREAMLIT UI
+        asyncio.run(fetch_all())  
+        progress.update(len(batch))
 
 
-    # ============================================================================
-    # START PROCESSING
-    # ============================================================================
 
-    if st.button("Search Images", key="swiss_start_button"):
-        st.session_state["swiss_start"] = True
-        st.session_state["swiss_done"] = False
-        st.session_state.pop("swiss_zip_path", None)
-        st.session_state.pop("swiss_error_path", None)
+    # ------------------ PROCESS BUTTON ------------------
 
-    if st.session_state.get("swiss_start") and not st.session_state.get("swiss_done"):
+    if st.button("Search Images"):
 
         sku_list = get_sku_list(uploaded_file, manual_input)
 
         if not sku_list:
-            st.warning("Please upload a file or enter SKUs.")
-            st.session_state["swiss_start"] = False
+            st.warning("No SKU found.")
             st.stop()
 
         total = len(sku_list)
-        st.info(f"Processing {total} SKUs from Switzerland server...")
+        st.info(f"Processing {total} SKUs...")
 
-        progress_bar = st.progress(0)
-        counter = {"value": 0}
+        # progress bar
+        progress = st.progress(0)
+        import time
 
-        def update_progress():
-            counter["value"] += 1
-            progress_bar.progress(counter["value"] / total)
+        # internal progress tracker
+        class P:
+            count = 0
+            def update(self, n):
+                self.count += n
+                progress.progress(self.count / total)
 
-        error_codes = []
+        P = P()
 
-        with st.spinner("Downloading and processing images..."):
-            with tempfile.TemporaryDirectory() as folder:
-                asyncio.run(run_processing_swiss(sku_list, folder, update_progress, error_codes))
+        error_list = []
 
-                # ZIP OUTPUT
-                if any(os.scandir(folder)):
-                    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-                        shutil.make_archive(tmp.name[:-4], "zip", folder)
-                        st.session_state["swiss_zip_path"] = tmp.name
-                else:
-                    st.session_state["swiss_zip_path"] = None
+        # PROCESS IN SAFE BATCHES (1000 SKU per batch)
+        BATCH_SIZE = 1000
+        with tempfile.TemporaryDirectory() as folder:
+            for i in range(0, total, BATCH_SIZE):
+                batch = sku_list[i:i+BATCH_SIZE]
+                download_batch(batch, folder, error_list, P)
 
-                # ERRORS OUTPUT
-                if error_codes:
-                    df_err = pd.DataFrame(sorted(set(error_codes)), columns=["sku"])
-                    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", encoding="utf-8-sig") as tmp:
-                        df_err.to_csv(tmp.name, index=False, sep=';')
-                        st.session_state["swiss_error_path"] = tmp.name
-                else:
-                    st.session_state["swiss_error_path"] = None
+            # ZIP output
+            tmpzip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+            shutil.make_archive(tmpzip.name[:-4], "zip", folder)
+            zip_path = tmpzip.name
 
-        st.session_state["swiss_done"] = True
-        st.session_state["swiss_start"] = False
+            # Error list
+            tmperr = None
+            if error_list:
+                tmperr = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
+                pd.DataFrame({"sku": sorted(set(error_list))}).to_csv(tmperr, index=False, sep=';')
 
+        # ------------------ DOWNLOAD BUTTONS ------------------
 
-    # ============================================================================
-    # DOWNLOAD BUTTONS
-    # ============================================================================
+        st.success("Processing completed!")
 
-    if st.session_state.get("swiss_done"):
-        st.markdown("---")
-        col1, col2 = st.columns(2)
+        with open(zip_path, "rb") as f:
+            st.download_button("Download Images ZIP", f, "switzerland_images.zip")
 
-        with col1:
-            zip_path = st.session_state.get("swiss_zip_path")
-            if zip_path and os.path.exists(zip_path):
-                with open(zip_path, "rb") as f:
-                    st.download_button("Download Images (ZIP)", f, "switzerland_images.zip", "application/zip")
-            else:
-                st.info("No images generated.")
+        if tmperr:
+            with open(tmperr, "rb") as f:
+                st.download_button("Missing Images CSV", f, "missing_images.csv")
 
-        with col2:
-            err_path = st.session_state.get("swiss_error_path")
-            if err_path and os.path.exists(err_path):
-                with open(err_path, "rb") as f:
-                    st.download_button("Missing Image List", f, "switzerland_missing.csv", "text/csv")
-            else:
-                st.info("No errors detected.")
 
 
 # ======================================================
