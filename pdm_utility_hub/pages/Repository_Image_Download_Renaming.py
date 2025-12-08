@@ -245,8 +245,11 @@ def get_sku_list(uploaded_file_obj, manual_text):
     unique_sku_list = list(dict.fromkeys(sku for sku in sku_list if sku))
     return unique_sku_list
 
+import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 # ======================================================
-# SECTION: Switzerland (FINAL WORKING VERSION)
+# SECTION: Switzerland  (FINAL — NO ASYNC)
 # ======================================================
 if server_country == "Switzerland":
     st.header("Switzerland Server Image Processing")
@@ -256,15 +259,16 @@ if server_country == "Switzerland":
 
     # ------------------ UTILITIES ------------------
 
-    def get_sku_list(uploaded_file, manual_input):
-        sku_list = []
+    def get_sku_list(uploaded, manual_text):
+        sku = []
 
-        if uploaded_file:
-            fn = uploaded_file.name.lower()
+        if uploaded:
+            fn = uploaded.name.lower()
+
             if fn.endswith(".csv"):
-                df = pd.read_csv(uploaded_file, dtype=str, sep=None, engine="python")
+                df = pd.read_csv(uploaded, dtype=str, sep=None, engine="python")
             else:
-                df = pd.read_excel(uploaded_file, dtype=str)
+                df = pd.read_excel(uploaded, dtype=str)
 
             if "sku" not in df.columns:
                 st.error("Column 'sku' not found.")
@@ -272,29 +276,27 @@ if server_country == "Switzerland":
 
             df["sku"] = df["sku"].astype(str).str.strip()
             df = df[df["sku"] != ""]
-            sku_list.extend(df["sku"].tolist())
+            sku.extend(df["sku"].tolist())
 
-        if manual_input.strip():
-            manual = [x.strip() for x in manual_input.split("\n") if x.strip()]
-            sku_list.extend(manual)
+        if manual_text.strip():
+            sku.extend([x.strip() for x in manual_text.split("\n") if x.strip()])
 
-        return list(dict.fromkeys(sku_list))
+        # remove duplicates
+        return list(dict.fromkeys(sku))
 
 
     def get_image_url(sku):
-        pharmacode = str(sku)
-        if pharmacode.upper().startswith("CH"):
-            pharmacode = pharmacode[2:].lstrip("0")
+        sku = str(sku)
+        if sku.upper().startswith("CH"):
+            sku = sku[2:].lstrip("0")
         else:
-            pharmacode = pharmacocode.lstrip("0")
+            sku = sku.lstrip("0")
 
-        if not pharmacode:
+        if not sku:
             return None
 
-        return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{pharmacode}/F"
+        return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{sku}/F"
 
-
-    # ------------------ IMAGE PROCESSING ------------------
 
     def process_image(sku, content, folder):
         try:
@@ -307,8 +309,7 @@ if server_country == "Switzerland":
             img = ImageOps.exif_transpose(img)
 
             bg = Image.new(img.mode, img.size, (255,255,255))
-            diff = ImageChops.difference(img, bg)
-            bbox = diff.getbbox()
+            bbox = ImageChops.difference(img, bg).getbbox()
             if bbox:
                 img = img.crop(bbox)
 
@@ -325,98 +326,77 @@ if server_country == "Switzerland":
             return False
 
 
-    # ------------------ SYNC BATCH DOWNLOADER ------------------
+    def download_one(sku, folder):
+        url = get_image_url(sku)
+        if not url:
+            return sku, False
 
-    def download_batch(batch, folder, error_list, progress):
-        """Process batch without async loop interruptions."""
-        connector = aiohttp.TCPConnector(limit=8)
-        async def fetch_all():
-
-            async with aiohttp.ClientSession(connector=connector) as session:
-
-                async def fetch_one(sku):
-                    url = get_image_url(sku)
-                    if not url:
-                        error_list.append(sku)
-                        return
-
-                    try:
-                        async with session.get(url, timeout=25) as r:
-                            if r.status == 200:
-                                content = await r.read()
-                                ok = await asyncio.to_thread(process_image, sku, content, folder)
-                                if not ok:
-                                    error_list.append(sku)
-                            else:
-                                error_list.append(sku)
-                    except:
-                        error_list.append(sku)
-
-                tasks = [fetch_one(sku) for sku in batch]
-                await asyncio.gather(*tasks)
-
-        # RUN ASYNC WITHOUT IMPACTING STREAMLIT UI
-        asyncio.run(fetch_all())  
-        progress.update(len(batch))
+        try:
+            resp = requests.get(url, timeout=20)
+            if resp.status_code != 200:
+                return sku, False
+            ok = process_image(sku, resp.content, folder)
+            return sku, ok
+        except:
+            return sku, False
 
 
-
-    # ------------------ PROCESS BUTTON ------------------
+    # ------------------ MAIN BUTTON ------------------
 
     if st.button("Search Images"):
-
         sku_list = get_sku_list(uploaded_file, manual_input)
 
         if not sku_list:
             st.warning("No SKU found.")
             st.stop()
 
-        total = len(sku_list)
-        st.info(f"Processing {total} SKUs...")
-
-        # progress bar
+        st.info(f"Processing {len(sku_list)} SKUs...")
         progress = st.progress(0)
-        import time
+        errors = []
 
-        # internal progress tracker
-        class P:
-            count = 0
-            def update(self, n):
-                self.count += n
-                progress.progress(self.count / total)
+        BATCH_SIZE = 8  # same concurrency as aiohttp
 
-        P = P()
-
-        error_list = []
-
-        # PROCESS IN SAFE BATCHES (1000 SKU per batch)
-        BATCH_SIZE = 1000
         with tempfile.TemporaryDirectory() as folder:
-            for i in range(0, total, BATCH_SIZE):
-                batch = sku_list[i:i+BATCH_SIZE]
-                download_batch(batch, folder, error_list, P)
+            futures = []
+            done = 0
 
-            # ZIP output
+            with ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
+                futures = {executor.submit(download_one, sku, folder): sku for sku in sku_list}
+
+                for fut in as_completed(futures):
+                    sku = futures[fut]
+                    ok = False
+                    try:
+                        _, ok = fut.result()
+                    except:
+                        ok = False
+
+                    if not ok:
+                        errors.append(sku)
+
+                    done += 1
+                    progress.progress(done / len(sku_list))
+
+            # ZIP OUTPUT
             tmpzip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
             shutil.make_archive(tmpzip.name[:-4], "zip", folder)
             zip_path = tmpzip.name
 
-            # Error list
+            # ERROR CSV
             tmperr = None
-            if error_list:
+            if errors:
                 tmperr = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
-                pd.DataFrame({"sku": sorted(set(error_list))}).to_csv(tmperr, index=False, sep=';')
+                pd.DataFrame({"sku": sorted(set(errors))}).to_csv(tmperr, index=False, sep=';')
 
-        # ------------------ DOWNLOAD BUTTONS ------------------
-
-        st.success("Processing completed!")
+        st.success("Processing complete!")
 
         with open(zip_path, "rb") as f:
             st.download_button("Download Images ZIP", f, "switzerland_images.zip")
 
-        if tmperr:
+        if errors:
             with open(tmperr, "rb") as f:
-                st.download_button("Missing Images CSV", f, "missing_images.csv")
+                st.download_button("Download Missing Images CSV", f, "switzerland_missing.csv")
+
 
 
 
