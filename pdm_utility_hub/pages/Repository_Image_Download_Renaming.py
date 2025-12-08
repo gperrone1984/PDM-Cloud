@@ -253,112 +253,113 @@ if server_country == "Switzerland":
     st.markdown("""
     :information_source: **How to use:**
 
-    - Create a list of products: rename the column **sku** or use Quick Report in Akeneo.
-    - In Akeneo, export CSV or Excel with:
-        - With Codes
-        - Without Media
-        - All Attributes or Grid Context (ID)
+    - Export file from Akeneo with a column named **sku**
+    - CSV or Excel accepted
+    - Or paste SKUs manually (one per line)
     """)
 
-    # ---------------------------------------
     # RESET BUTTON
-    # ---------------------------------------
     if st.button("🧹 Clear Cache and Reset Data"):
-        keys_to_remove = [
-            k for k in st.session_state.keys()
-            if k.startswith("swiss_")
-        ]
+        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("swiss_")]
         for key in keys_to_remove:
             del st.session_state[key]
         st.session_state["swiss_uploader_key"] = str(uuid.uuid4())
-        st.info("Cache cleared. Please re-upload your file.")
+        st.info("Cache cleared. Please re-upload.")
         st.rerun()
 
-    # Upload + manual SKUs
-    manual_input = st.text_area("Or paste SKUs here (one per line):", key="input_switzerland")
-    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", type=["xlsx", "csv"],
+    # INPUTS
+    manual_input = st.text_area("Or paste SKUs here (one per line):", key="swiss_manual_input")
+    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", 
+                                     type=["xlsx", "csv"], 
                                      key=st.session_state.get("swiss_uploader_key", "swiss_file"))
 
-    # ---------------------------------------
-    # START PROCESSING
-    # ---------------------------------------
-    if st.button("Search Images", key="start_switzerland"):
-        st.session_state["swiss_start"] = True
-        st.session_state["swiss_done"] = False
-        st.session_state.pop("swiss_zip_path", None)
-        st.session_state.pop("swiss_error_path", None)
 
-    # ======================================================
-    # MAIN PROCESSING LOGIC
-    # ======================================================
-    if st.session_state.get("swiss_start") and not st.session_state.get("swiss_done"):
+    # ============================================================================
+    # UTILITY FUNCTIONS
+    # ============================================================================
 
-        # ---------- Extract SKU list ----------
-        sku_list = get_sku_list(uploaded_file, manual_input)
-        if not sku_list:
-            st.warning("Upload a file or paste some SKUs.")
-            st.session_state["swiss_start"] = False
-            st.stop()
+    def get_sku_list(uploaded_file, manual_input):
+        sku_list = []
 
-        total_count = len(sku_list)
-        st.info(f"Processing {total_count} SKUs for Switzerland...")
+        if uploaded_file:
+            name = uploaded_file.name.lower()
 
-        progress_bar = st.progress(0)
-        progress_text = st.empty()
-        error_codes = []
-
-        # ---------- Image URL ----------
-        def get_image_url(product_code):
-            pharmacode = str(product_code)
-            if pharmacode.upper().startswith("CH"):
-                pharmacode = pharmacode[2:].lstrip("0")
+            # Read file as strings (VERY IMPORTANT)
+            if name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file, dtype=str, sep=None, engine="python")
             else:
-                pharmacode = pharmacode.lstrip("0")
+                df = pd.read_excel(uploaded_file, dtype=str)
 
-            if not pharmacode:
-                return None
+            if "sku" not in df.columns:
+                st.error("Column 'sku' not found in the file.")
+                return []
 
-            return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{pharmacode}/F"
+            df["sku"] = df["sku"].astype(str).str.strip()
+            df = df[df["sku"].notna() & (df["sku"] != "")]
+            sku_list.extend(df["sku"].tolist())
 
-        # ---------- Image Processing ----------
-        def process_and_save(original_sku, content, folder):
-            try:
-                img = Image.open(BytesIO(content))
-                gray = img.convert("L")
-                extrema = gray.getextrema()
+        if manual_input.strip():
+            manual_list = [x.strip() for x in manual_input.split("\n") if x.strip()]
+            sku_list.extend(manual_list)
 
-                if extrema == (0, 0) or extrema == (255, 255):
-                    return False
+        return list(dict.fromkeys(sku_list))  # remove duplicates
 
-                img = ImageOps.exif_transpose(img)
 
-                bg = Image.new(img.mode, img.size, (255, 255, 255))
-                diff = ImageChops.difference(img, bg)
-                bbox = diff.getbbox()
-                if bbox:
-                    img = img.crop(bbox)
-                if img.width == 0 or img.height == 0:
-                    return False
+    # URL builder for Swiss API
+    def get_image_url(product_code):
+        pharmacode = str(product_code)
+        if pharmacode.upper().startswith("CH"):
+            pharmacode = pharmacode[2:].lstrip("0")
+        else:
+            pharmacode = pharmacode.lstrip("0")
 
-                img.thumbnail((1000, 1000), Image.LANCZOS)
+        if not pharmacode:
+            return None
 
-                canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
-                offset_x = (1000 - img.width) // 2
-                offset_y = (1000 - img.height) // 2
-                canvas.paste(img, (offset_x, offset_y))
+        return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{pharmacode}/F"
 
-                out = os.path.join(folder, f"{original_sku}-h1.jpg")
-                canvas.save(out, "JPEG", quality=75)   # <<< QUALITÀ IMMAGINE 75
-                return True
 
-            except Exception:
+    # Image processing identical to Colab version
+    def process_and_save(sku, content, folder):
+        try:
+            img = Image.open(BytesIO(content))
+
+            # black or white image detection
+            gray = img.convert("L")
+            if gray.getextrema() in [(0,0), (255,255)]:
                 return False
 
-        # ---------- Async download ----------
-        async def fetch_process(session, sku, folder, idx):
+            img = ImageOps.exif_transpose(img)
+
+            bg = Image.new(img.mode, img.size, (255,255,255))
+            diff = ImageChops.difference(img, bg)
+            bbox = diff.getbbox()
+            if bbox:
+                img = img.crop(bbox)
+            if img.width == 0 or img.height == 0:
+                return False
+
+            img.thumbnail((1000,1000), Image.LANCZOS)
+
+            canvas = Image.new("RGB", (1000,1000), (255,255,255))
+            canvas.paste(img, ((1000-img.width)//2, (1000-img.height)//2))
+
+            out_path = os.path.join(folder, f"{sku}-h1.jpg")
+            canvas.save(out_path, "JPEG", quality=75)   # QUALITY = 75
+            return True
+
+        except:
+            return False
+
+
+    # Async processing
+    async def run_processing_swiss(sku_list, folder, update_progress, error_codes):
+
+        async def fetch_one(session, sku):
             url = get_image_url(sku)
             if not url:
                 error_codes.append(sku)
+                update_progress()
                 return
 
             try:
@@ -370,82 +371,97 @@ if server_country == "Switzerland":
                             error_codes.append(sku)
                     else:
                         error_codes.append(sku)
-
             except:
                 error_codes.append(sku)
 
-            progress_bar.progress((idx + 1) / total_count)
-            progress_text.text(f"Processed {idx+1}/{total_count}")
+            update_progress()
 
-        # ---------- Main async runner ----------
-        async def run_switzerland(folder):
-            connector = aiohttp.TCPConnector(limit=45)
-            async with aiohttp.ClientSession(connector=connector) as session:
-                tasks = [
-                    fetch_process(session, sku, folder, i)
-                    for i, sku in enumerate(sku_list)
-                ]
-                await asyncio.gather(*tasks)
+        connector = aiohttp.TCPConnector(limit=8)  # SAFE AND STABLE
+        async with aiohttp.ClientSession(connector=connector) as session:
+            tasks = [fetch_one(session, sku) for sku in sku_list]
+            await asyncio.gather(*tasks)
 
-        # ======================================================
-        # EXECUTION
-        # ======================================================
-        with st.spinner("Processing images..."):
+
+    # ============================================================================
+    # START PROCESSING
+    # ============================================================================
+
+    if st.button("Search Images", key="swiss_start_button"):
+        st.session_state["swiss_start"] = True
+        st.session_state["swiss_done"] = False
+        st.session_state.pop("swiss_zip_path", None)
+        st.session_state.pop("swiss_error_path", None)
+
+    if st.session_state.get("swiss_start") and not st.session_state.get("swiss_done"):
+
+        sku_list = get_sku_list(uploaded_file, manual_input)
+
+        if not sku_list:
+            st.warning("Please upload a file or enter SKUs.")
+            st.session_state["swiss_start"] = False
+            st.stop()
+
+        total = len(sku_list)
+        st.info(f"Processing {total} SKUs from Switzerland server...")
+
+        progress_bar = st.progress(0)
+        counter = {"value": 0}
+
+        def update_progress():
+            counter["value"] += 1
+            progress_bar.progress(counter["value"] / total)
+
+        error_codes = []
+
+        with st.spinner("Downloading and processing images..."):
             with tempfile.TemporaryDirectory() as folder:
-                asyncio.run(run_switzerland(folder))
+                asyncio.run(run_processing_swiss(sku_list, folder, update_progress, error_codes))
 
-                # ZIP
+                # ZIP OUTPUT
                 if any(os.scandir(folder)):
-                    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmpzip:
-                        shutil.make_archive(tmpzip.name[:-4], 'zip', folder)
-                        st.session_state["swiss_zip_path"] = tmpzip.name
+                    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+                        shutil.make_archive(tmp.name[:-4], "zip", folder)
+                        st.session_state["swiss_zip_path"] = tmp.name
                 else:
                     st.session_state["swiss_zip_path"] = None
 
-                # ERRORS
+                # ERRORS OUTPUT
                 if error_codes:
                     df_err = pd.DataFrame(sorted(set(error_codes)), columns=["sku"])
-                    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", newline="", encoding="utf-8-sig") as tmperr:
-                        df_err.to_csv(tmperr, index=False, sep=';')
-                        st.session_state["swiss_error_path"] = tmperr.name
+                    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", encoding="utf-8-sig") as tmp:
+                        df_err.to_csv(tmp.name, index=False, sep=';')
+                        st.session_state["swiss_error_path"] = tmp.name
                 else:
                     st.session_state["swiss_error_path"] = None
 
         st.session_state["swiss_done"] = True
         st.session_state["swiss_start"] = False
 
-    # ======================================================
-    # DOWNLOAD SECTION
-    # ======================================================
+
+    # ============================================================================
+    # DOWNLOAD BUTTONS
+    # ============================================================================
+
     if st.session_state.get("swiss_done"):
         st.markdown("---")
         col1, col2 = st.columns(2)
 
         with col1:
-            zpath = st.session_state.get("swiss_zip_path")
-            if zpath and os.path.exists(zpath):
-                with open(zpath, "rb") as f:
-                    st.download_button(
-                        "Download Images (Switzerland)",
-                        data=f,
-                        file_name="switzerland_images.zip",
-                        mime="application/zip",
-                    )
+            zip_path = st.session_state.get("swiss_zip_path")
+            if zip_path and os.path.exists(zip_path):
+                with open(zip_path, "rb") as f:
+                    st.download_button("Download Images (ZIP)", f, "switzerland_images.zip", "application/zip")
             else:
-                st.info("No images were processed.")
+                st.info("No images generated.")
 
         with col2:
-            epath = st.session_state.get("swiss_error_path")
-            if epath and os.path.exists(epath):
-                with open(epath, "rb") as f:
-                    st.download_button(
-                        "Download Missing Image List",
-                        data=f,
-                        file_name="switzerland_missing.csv",
-                        mime="text/csv",
-                    )
+            err_path = st.session_state.get("swiss_error_path")
+            if err_path and os.path.exists(err_path):
+                with open(err_path, "rb") as f:
+                    st.download_button("Missing Image List", f, "switzerland_missing.csv", "text/csv")
             else:
                 st.info("No errors detected.")
+
 
 # ======================================================
 # SECTION: Farmadati
