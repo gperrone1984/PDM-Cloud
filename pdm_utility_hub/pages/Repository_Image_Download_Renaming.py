@@ -249,7 +249,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ======================================================
-# SECTION: Switzerland
+# SECTION: Switzerland (with automatic 5000 SKU batches)
 # ======================================================
 if server_country == "Switzerland":
     st.header("Switzerland Server Image Processing")
@@ -293,9 +293,10 @@ if server_country == "Switzerland":
         st.session_state.pop("renaming_error_path_ch", None)
 
     # ======================================================
-    # ASYNC PROCESSING
+    # PROCESSING SECTION
     # ======================================================
     if st.session_state.get("renaming_start_processing_ch") and not st.session_state.get("renaming_processing_done_ch", False):
+
         sku_list = get_sku_list(uploaded_file, manual_input)
 
         if not sku_list:
@@ -303,8 +304,19 @@ if server_country == "Switzerland":
             st.session_state.renaming_start_processing_ch = False
 
         else:
-            st.info(f"Processing {len(sku_list)} SKUs for Switzerland...")
-            progress_bar = st.progress(0, text="Starting processing...")
+            st.info(f"Total SKUs: {len(sku_list)}")
+            st.info("Batch size: 5000 SKUs per batch")
+
+            # ======================================================
+            # SPLIT INTO BATCHES OF 5000
+            # ======================================================
+            chunk_size = 5000
+            batches = [sku_list[i:i + chunk_size] for i in range(0, len(sku_list), chunk_size)]
+            total_batches = len(batches)
+
+            st.info(f"Number of batches: {total_batches}")
+
+            progress_bar = st.progress(0, text="Preparing...")
 
             # ======================================================
             # URL BUILDER
@@ -316,100 +328,100 @@ if server_country == "Switzerland":
                 return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{pharmacode}/F"
 
             # ======================================================
-            # PROCESS IMAGE (CONTROLLO NERO + SAVE)
+            # PROCESS IMAGE (CONTROL BLACK ONLY)
             # ======================================================
             def process_and_save(original_sku, content, download_folder):
-                """Process image and save only if original isn't fully black."""
                 try:
                     img = Image.open(BytesIO(content))
                     img = ImageOps.exif_transpose(img)
 
-                    # --- CONTROLLO UNICO: immagine originale nera ---
+                    # --- CONTROLLO UNICO: immagine originale completamente nera ---
                     extrema = img.convert("L").getextrema()
-                    if extrema == (0, 0):  # completamente nera
+                    if extrema == (0, 0):
                         return False
 
-                    # Resize
                     img.thumbnail((1000, 1000), Image.LANCZOS)
 
-                    # Canvas bianco centrato
                     canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
                     offset_x = (1000 - img.width) // 2
                     offset_y = (1000 - img.height) // 2
                     canvas.paste(img, (offset_x, offset_y))
 
-                    # Save (quality 75 richiesto)
                     new_filename = f"{original_sku}-h1.jpg"
                     img_path = os.path.join(download_folder, new_filename)
                     canvas.save(img_path, "JPEG", quality=75)
-
                     return True
 
-                except Exception:
+                except:
                     return False
 
             # ======================================================
-            # ASYNC FETCH WITH RETRY
+            # ASYNC DOWNLOAD WITH RETRY
             # ======================================================
             async def fetch_with_retry(session, url, retries=3):
                 for attempt in range(retries):
                     try:
                         async with session.get(url, timeout=30) as resp:
                             if resp.status == 200:
-                                content = await resp.read()
-                                if content:
-                                    return content
+                                data = await resp.read()
+                                if data:
+                                    return data
                             await asyncio.sleep(0.5 * (attempt + 1))
                     except:
                         await asyncio.sleep(0.5 * (attempt + 1))
                 return None
 
-            async def fetch_and_process_image(session, semaphore, sku, download_folder, error_codes):
+            async def fetch_and_process(session, semaphore, sku, download_folder, error_list):
                 url = get_image_url(sku)
-
                 async with semaphore:
-                    content = await fetch_with_retry(session, url, retries=3)
+                    content = await fetch_with_retry(session, url)
                     if content is None:
-                        error_codes.append(sku)
+                        error_list.append(sku)
                         return
-
                     success = await asyncio.to_thread(process_and_save, sku, content, download_folder)
                     if not success:
-                        error_codes.append(sku)
+                        error_list.append(sku)
 
-            async def run_processing(sku_list, download_folder, progress_bar):
+            async def run_batch(batch_skus, download_folder, batch_index):
+                st.write(f"Processing batch {batch_index}/{total_batches} ({len(batch_skus)} SKUs)")
                 connector = aiohttp.TCPConnector(limit=20)
                 semaphore = asyncio.Semaphore(10)
-                error_codes = []
+                errors = []
 
                 async with aiohttp.ClientSession(connector=connector) as session:
                     tasks = [
-                        fetch_and_process_image(session, semaphore, sku, download_folder, error_codes)
-                        for sku in sku_list
+                        fetch_and_process(session, semaphore, sku, download_folder, errors)
+                        for sku in batch_skus
                     ]
-
-                    total = len(tasks)
                     completed = 0
-
                     for f in asyncio.as_completed(tasks):
                         await f
                         completed += 1
-                        progress_bar.progress(completed / total)
+                        progress_bar.progress(completed / len(batch_skus))
 
-                progress_bar.progress(1.0)
-                return error_codes
+                return errors
 
             # ======================================================
-            # RUN + ZIP + ERROR CSV
+            # MAIN PROCESSING LOOP (BATCH BY BATCH)
             # ======================================================
-            with st.spinner("Processing images, please wait..."):
+            all_errors = []
+
+            with st.spinner("Processing images in batches, please wait..."):
                 with tempfile.TemporaryDirectory() as download_folder:
 
-                    error_codes = asyncio.run(
-                        run_processing(sku_list, download_folder, progress_bar)
-                    )
+                    for batch_index, batch_skus in enumerate(batches, start=1):
 
-                    # ZIP
+                        # Reset progress bar for each batch
+                        progress_bar.progress(0, text=f"Batch {batch_index}/{total_batches}")
+
+                        batch_errors = asyncio.run(
+                            run_batch(batch_skus, download_folder, batch_index)
+                        )
+                        all_errors.extend(batch_errors)
+
+                        st.success(f"Batch {batch_index}/{total_batches} completed")
+
+                    # --- ZIP CREATION ---
                     if any(os.scandir(download_folder)):
                         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
                             zip_path = tmp_zip.name
@@ -418,11 +430,11 @@ if server_country == "Switzerland":
                     else:
                         st.session_state["renaming_zip_path_ch"] = None
 
-                    # CSV ERROR LIST
-                    if error_codes:
-                        error_df = pd.DataFrame(sorted(set(error_codes)), columns=["sku"])
+                    # --- SAVE ERROR CSV ---
+                    if all_errors:
+                        df_errors = pd.DataFrame(sorted(set(all_errors)), columns=["sku"])
                         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", encoding="utf-8-sig") as tmp_err:
-                            error_df.to_csv(tmp_err, index=False, sep=";")
+                            df_errors.to_csv(tmp_err, index=False, sep=";")
                             st.session_state["renaming_error_path_ch"] = tmp_err.name
                     else:
                         st.session_state["renaming_error_path_ch"] = None
@@ -453,9 +465,9 @@ if server_country == "Switzerland":
 
         # ERRORS CSV
         with col2:
-            error_path = st.session_state.get("renaming_error_path_ch")
-            if error_path and os.path.exists(error_path):
-                with open(error_path, "rb") as f:
+            err_path = st.session_state.get("renaming_error_path_ch")
+            if err_path and os.path.exists(err_path):
+                with open(err_path, "rb") as f:
                     st.download_button(
                         label="Download Missing Image List",
                         data=f,
