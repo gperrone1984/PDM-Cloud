@@ -249,7 +249,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ======================================================
-# SECTION: Switzerland (5000 batch + single progress bar)
+# SECTION: Switzerland (2500 batch + single progress bar)
 # ======================================================
 if server_country == "Switzerland":
     st.header("Switzerland Server Image Processing")
@@ -304,11 +304,11 @@ if server_country == "Switzerland":
 
         else:
             total_skus = len(sku_list)
-            chunk_size = 5000
+            chunk_size = 2500
             batches = [sku_list[i:i + chunk_size] for i in range(0, total_skus, chunk_size)]
             total_batches = len(batches)
 
-            st.info(f"Total SKUs: {total_skus} • Batch size: 5000 • Number of batches: {total_batches}")
+            st.info(f"Total SKUs: {total_skus} • Batch size: 2500 • Number of batches: {total_batches}")
 
             # --- Single global progress bar ---
             progress_bar = st.progress(0.0, text="Starting...")
