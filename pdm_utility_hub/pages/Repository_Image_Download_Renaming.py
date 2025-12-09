@@ -249,7 +249,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ======================================================
-# SECTION: Switzerland (with automatic 5000 SKU batches)
+# SECTION: Switzerland (with automatic 2500 SKU batches)
 # ======================================================
 if server_country == "Switzerland":
     st.header("Switzerland Server Image Processing")
@@ -305,12 +305,12 @@ if server_country == "Switzerland":
 
         else:
             st.info(f"Total SKUs: {len(sku_list)}")
-            st.info("Batch size: 5000 SKUs per batch")
+            st.info("Batch size: 2500 SKUs per batch")
 
             # ======================================================
-            # SPLIT INTO BATCHES OF 5000
+            # SPLIT INTO BATCHES OF 2500
             # ======================================================
-            chunk_size = 5000
+            chunk_size = 2500
             batches = [sku_list[i:i + chunk_size] for i in range(0, len(sku_list), chunk_size)]
             total_batches = len(batches)
 
