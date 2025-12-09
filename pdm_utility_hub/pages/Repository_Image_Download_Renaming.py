@@ -249,53 +249,43 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ======================================================
-# SECTION: Switzerland (Worker Pool – Final Stable Version)
+# SECTION: Switzerland (with automatic 2500 SKU batches)
 # ======================================================
 if server_country == "Switzerland":
-
     st.header("Switzerland Server Image Processing")
     st.markdown("""
     :information_source: **How to use:**
 
-    - Create a list of products by renaming the SKU column or using Quick Report in Akeneo.
-    - Export as CSV or Excel.
-    - With Codes, Without Media.
+    - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
+    - :arrow_right: **In Akeneo, select the following options:**
+        - **File Type:** CSV or Excel
+        - **All Attributes or Grid Context:** (for Grid Context, select ID)
+        - **With Codes**
+        - **Without Media**
     """)
 
-    # ------------------------------------------------------
-    # RESET BUTTON
-    # ------------------------------------------------------
+    # --- RESET BUTTON ---
     if st.button("🧹 Clear Cache and Reset Data"):
         keys_to_remove = [
             k for k in st.session_state.keys()
-            if k.startswith("renaming_")
-            or k in ["uploader_key", "session_id"]
+            if k.startswith("renaming_") or k in [
+                "uploader_key", "session_id",
+                "processing_done", "zip_path", "error_path",
+                "farmadati_zip", "farmadati_errors", "farmadati_ready",
+                "process_images_switzerland", "process_images_farmadati"
+            ]
         ]
         for key in keys_to_remove:
             if key in st.session_state:
                 del st.session_state[key]
-
         st.session_state.renaming_uploader_key = str(uuid.uuid4())
         st.info("Cache cleared. Please re-upload your file.")
         st.rerun()
 
-    # ------------------------------------------------------
-    # INPUT FILE OR TEXT
-    # ------------------------------------------------------
-    manual_input = st.text_area(
-        "Paste your SKUs here (one per line):",
-        key="manual_input_switzerland"
-    )
+    # INPUTS
+    manual_input = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_switzerland")
+    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
 
-    uploaded_file = st.file_uploader(
-        "Upload file (Excel or CSV)",
-        type=["xlsx", "csv"],
-        key=st.session_state.get("renaming_uploader_key", "uploader_switzerland")
-    )
-
-    # ------------------------------------------------------
-    # TRIGGER PROCESSING
-    # ------------------------------------------------------
     if st.button("Search Images", key="process_switzerland"):
         st.session_state.renaming_start_processing_ch = True
         st.session_state.renaming_processing_done_ch = False
@@ -303,208 +293,189 @@ if server_country == "Switzerland":
         st.session_state.pop("renaming_error_path_ch", None)
 
     # ======================================================
-    # PROCESSING START
+    # PROCESSING SECTION
     # ======================================================
-    if st.session_state.get("renaming_start_processing_ch") \
-       and not st.session_state.get("renaming_processing_done_ch", False):
+    if st.session_state.get("renaming_start_processing_ch") and not st.session_state.get("renaming_processing_done_ch", False):
 
         sku_list = get_sku_list(uploaded_file, manual_input)
 
         if not sku_list:
-            st.warning("Please upload a file or paste some SKUs.")
+            st.warning("Please upload a file or paste some SKUs to process.")
             st.session_state.renaming_start_processing_ch = False
 
         else:
-            # ------------------------------------------------------
-            # INITIAL SETUP
-            # ------------------------------------------------------
-            total_skus = len(sku_list)
-            st.info(f"Total SKUs: {total_skus}")
+            st.info(f"Total SKUs: {len(sku_list)}")
+            st.info("Batch size: 2500 SKUs per batch")
 
-            progress_bar = st.progress(0.0, text="Starting...")
-            processed_count = 0
+            # ======================================================
+            # SPLIT INTO BATCHES OF 2500
+            # ======================================================
+            chunk_size = 2500
+            batches = [sku_list[i:i + chunk_size] for i in range(0, len(sku_list), chunk_size)]
+            total_batches = len(batches)
 
-            # ------------------------------------------------------
-            # IMAGE HELPERS
-            # ------------------------------------------------------
-            def get_image_url(sku):
-                sku = str(sku).strip()
-                if sku.upper().startswith("CH"):
-                    sku = sku[2:]
-                return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{sku}/F"
+            st.info(f"Number of batches: {total_batches}")
 
-            def process_and_save(sku, content, folder):
-                """Process image and save only if not fully black."""
+            progress_bar = st.progress(0, text="Preparing...")
+
+            # ======================================================
+            # URL BUILDER
+            # ======================================================
+            def get_image_url(product_code):
+                pharmacode = str(product_code).strip()
+                if pharmacode.upper().startswith("CH"):
+                    pharmacode = pharmacode[2:]
+                return f"https://documedis.hcisolutions.ch/2020-01/api/products/image/PICFRONT3D/Pharmacode/{pharmacode}/F"
+
+            # ======================================================
+            # PROCESS IMAGE (CONTROL BLACK ONLY)
+            # ======================================================
+            def process_and_save(original_sku, content, download_folder):
                 try:
                     img = Image.open(BytesIO(content))
                     img = ImageOps.exif_transpose(img)
 
-                    # Fully black check
-                    if img.convert("L").getextrema() == (0, 0):
+                    # --- CONTROLLO UNICO: immagine originale completamente nera ---
+                    extrema = img.convert("L").getextrema()
+                    if extrema == (0, 0):
                         return False
 
                     img.thumbnail((1000, 1000), Image.LANCZOS)
-                    canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
-                    canvas.paste(
-                        img,
-                        ((1000 - img.width) // 2, (1000 - img.height) // 2)
-                    )
 
-                    canvas.save(
-                        os.path.join(folder, f"{sku}-h1.jpg"),
-                        "JPEG",
-                        quality=75
-                    )
+                    canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
+                    offset_x = (1000 - img.width) // 2
+                    offset_y = (1000 - img.height) // 2
+                    canvas.paste(img, (offset_x, offset_y))
+
+                    new_filename = f"{original_sku}-h1.jpg"
+                    img_path = os.path.join(download_folder, new_filename)
+                    canvas.save(img_path, "JPEG", quality=75)
                     return True
 
                 except:
                     return False
 
-            # ------------------------------------------------------
-            # NETWORK HELPERS
-            # ------------------------------------------------------
+            # ======================================================
+            # ASYNC DOWNLOAD WITH RETRY
+            # ======================================================
             async def fetch_with_retry(session, url, retries=3):
                 for attempt in range(retries):
                     try:
-                        async with session.get(url, timeout=30) as response:
-                            if response.status == 200:
-                                data = await response.read()
+                        async with session.get(url, timeout=30) as resp:
+                            if resp.status == 200:
+                                data = await resp.read()
                                 if data:
                                     return data
+                            await asyncio.sleep(0.5 * (attempt + 1))
                     except:
-                        pass
-                    await asyncio.sleep(0.5 * (attempt + 1))
+                        await asyncio.sleep(0.5 * (attempt + 1))
                 return None
 
-            # ------------------------------------------------------
-            # WORKER POOL (NO MEMORY OVERFLOW)
-            # ------------------------------------------------------
-            async def worker(queue, session, folder, error_list):
-                nonlocal processed_count
-
-                while True:
-                    sku = await queue.get()
-                    if sku is None:
-                        queue.task_done()
-                        break
-
-                    url = get_image_url(sku)
-
+            async def fetch_and_process(session, semaphore, sku, download_folder, error_list):
+                url = get_image_url(sku)
+                async with semaphore:
                     content = await fetch_with_retry(session, url)
-                    ok = False
-
-                    if content:
-                        ok = await asyncio.to_thread(process_and_save, sku, content, folder)
-
-                    if not ok:
+                    if content is None:
+                        error_list.append(sku)
+                        return
+                    success = await asyncio.to_thread(process_and_save, sku, content, download_folder)
+                    if not success:
                         error_list.append(sku)
 
-                    processed_count += 1
-
-                    # update progress bar every 100 SKUs
-                    if processed_count % 100 == 0 or processed_count == total_skus:
-                        progress_bar.progress(
-                            processed_count / total_skus,
-                            text=f"Processed {processed_count}/{total_skus} SKUs"
-                        )
-
-                    queue.task_done()
-
-            async def run_pool(skus, folder):
-
-                queue = asyncio.Queue()
-                error_list = []
-
-                for s in skus:
-                    queue.put_nowait(s)
-
-                workers = 20  # number of async workers
+            async def run_batch(batch_skus, download_folder, batch_index):
+                st.write(f"Processing batch {batch_index}/{total_batches} ({len(batch_skus)} SKUs)")
                 connector = aiohttp.TCPConnector(limit=20)
+                semaphore = asyncio.Semaphore(10)
+                errors = []
 
                 async with aiohttp.ClientSession(connector=connector) as session:
-
                     tasks = [
-                        asyncio.create_task(worker(queue, session, folder, error_list))
-                        for _ in range(workers)
+                        fetch_and_process(session, semaphore, sku, download_folder, errors)
+                        for sku in batch_skus
                     ]
+                    completed = 0
+                    for f in asyncio.as_completed(tasks):
+                        await f
+                        completed += 1
+                        progress_bar.progress(completed / len(batch_skus))
 
-                    await queue.join()
+                return errors
 
-                    # stop workers
-                    for _ in range(workers):
-                        queue.put_nowait(None)
-                    await asyncio.gather(*tasks)
+            # ======================================================
+            # MAIN PROCESSING LOOP (BATCH BY BATCH)
+            # ======================================================
+            all_errors = []
 
-                return error_list
+            with st.spinner("Processing images in batches, please wait..."):
+                with tempfile.TemporaryDirectory() as download_folder:
 
-            # ------------------------------------------------------
-            # EXECUTE PROCESSING
-            # ------------------------------------------------------
-            with st.spinner("Processing all SKUs..."):
-                with tempfile.TemporaryDirectory() as folder:
+                    for batch_index, batch_skus in enumerate(batches, start=1):
 
-                    error_codes = asyncio.run(run_pool(sku_list, folder))
+                        # Reset progress bar for each batch
+                        progress_bar.progress(0, text=f"Batch {batch_index}/{total_batches}")
 
-                    # ZIP creation
-                    zip_path = None
-                    if any(os.scandir(folder)):
-                        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-                            zip_path = tmp.name
-                        shutil.make_archive(zip_path[:-4], "zip", folder)
+                        batch_errors = asyncio.run(
+                            run_batch(batch_skus, download_folder, batch_index)
+                        )
+                        all_errors.extend(batch_errors)
 
-                    st.session_state["renaming_zip_path_ch"] = zip_path
+                        st.success(f"Batch {batch_index}/{total_batches} completed")
 
-                    # Save error CSV
-                    if error_codes:
-                        df = pd.DataFrame(sorted(set(error_codes)), columns=["sku"])
-                        with tempfile.NamedTemporaryFile(
-                            suffix=".csv", delete=False, mode="w",
-                            encoding="utf-8-sig"
-                        ) as tmp:
-                            df.to_csv(tmp, index=False, sep=";")
-                            st.session_state["renaming_error_path_ch"] = tmp.name
+                    # --- ZIP CREATION ---
+                    if any(os.scandir(download_folder)):
+                        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
+                            zip_path = tmp_zip.name
+                        shutil.make_archive(zip_path[:-4], "zip", download_folder)
+                        st.session_state["renaming_zip_path_ch"] = zip_path
+                    else:
+                        st.session_state["renaming_zip_path_ch"] = None
+
+                    # --- SAVE ERROR CSV ---
+                    if all_errors:
+                        df_errors = pd.DataFrame(sorted(set(all_errors)), columns=["sku"])
+                        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", encoding="utf-8-sig") as tmp_err:
+                            df_errors.to_csv(tmp_err, index=False, sep=";")
+                            st.session_state["renaming_error_path_ch"] = tmp_err.name
                     else:
                         st.session_state["renaming_error_path_ch"] = None
 
-            st.session_state.renaming_processing_done_ch = True
+            st.session_state["renaming_processing_done_ch"] = True
             st.session_state.renaming_start_processing_ch = False
 
     # ======================================================
     # DOWNLOAD OUTPUTS
     # ======================================================
-    if st.session_state.get("renaming_processing_done_ch"):
-
+    if st.session_state.get("renaming_processing_done_ch", False):
         st.markdown("---")
         col1, col2 = st.columns(2)
 
         # ZIP
         with col1:
-            zp = st.session_state.get("renaming_zip_path_ch")
-            if zp and os.path.exists(zp):
-                with open(zp, "rb") as f:
+            zip_path = st.session_state.get("renaming_zip_path_ch")
+            if zip_path and os.path.exists(zip_path):
+                with open(zip_path, "rb") as f:
                     st.download_button(
-                        "Download Images",
-                        f,
+                        label="Download Images",
+                        data=f,
                         file_name="switzerland_images.zip",
                         mime="application/zip"
                     )
             else:
                 st.info("No images processed.")
 
-        # ERRORS
+        # ERRORS CSV
         with col2:
-            ep = st.session_state.get("renaming_error_path_ch")
-            if ep and os.path.exists(ep):
-                with open(ep, "rb") as f:
+            err_path = st.session_state.get("renaming_error_path_ch")
+            if err_path and os.path.exists(err_path):
+                with open(err_path, "rb") as f:
                     st.download_button(
-                        "Download Missing Image List",
-                        f,
+                        label="Download Missing Image List",
+                        data=f,
                         file_name="errors_switzerland.csv",
                         mime="text/csv"
                     )
             else:
                 st.info("No errors found.")
-
 
 
 
