@@ -315,7 +315,7 @@ def process_and_save_trimmed_image(image_bytes, dest_path):
     img = Image.open(BytesIO(image_bytes))
     img = trim(img)
     img = img.convert("RGB")
-    img.save(dest_path, "JPEG", quality=100)
+    img.save(dest_path, "JPEG", quality=75)
 
 async def async_get_nl_fr_images(product_code, session):
     tasks = [
@@ -471,7 +471,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 else:
                                     final_img = img
                                 save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
-                                await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=100)
+                                await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=75)
                                 processed_lang = True
                                 processed_keys.append(lang)
                             except Exception as e:
@@ -488,7 +488,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                     else:
                                         final_img_dup = img_dup
                                     dup_save_path = os.path.join(folder_name, f"{bundle_code}-fr-h1.jpg")
-                                    await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=100)
+                                    await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=75)
                                 except Exception as e:
                                     st.warning(f"Error duplicating image for missing 1-fr for bundle {bundle_code} (PZN: {product_code}): {e}")
                                     error_list.append((bundle_code, f"{product_code} (dup 1-fr processing error)"))
@@ -502,7 +502,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                     else:
                                         final_img_dup = img_dup
                                     dup_save_path = os.path.join(folder_name, f"{bundle_code}-nl-h1.jpg")
-                                    await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=100)
+                                    await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=75)
                                 except Exception as e:
                                     st.warning(f"Error duplicating image for missing 1-nl for bundle {bundle_code} (PZN: {product_code}): {e}")
                                     error_list.append((bundle_code, f"{product_code} (dup 1-nl processing error)"))
@@ -529,12 +529,12 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 suffix_fr = "-fr-h1"
                                 save_path_nl = os.path.join(folder_name, f"{bundle_code}{suffix_nl}.jpg")
                                 save_path_fr = os.path.join(folder_name, f"{bundle_code}{suffix_fr}.jpg")
-                                await asyncio.to_thread(final_img.save, save_path_nl, "JPEG", quality=100)
-                                await asyncio.to_thread(final_img.save, save_path_fr, "JPEG", quality=100)
+                                await asyncio.to_thread(final_img.save, save_path_nl, "JPEG", quality=75)
+                                await asyncio.to_thread(final_img.save, save_path_fr, "JPEG", quality=75)
                             else:
                                 suffix = "-h1"
                                 save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
-                                await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=100)
+                                await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=75)
                         except Exception as e:
                             st.warning(f"Error processing image for bundle {bundle_code} (PZN: {product_code}, Ext: {used_ext}): {e}")
                             error_list.append((bundle_code, f"{product_code} (Ext: {used_ext} processing error)"))
