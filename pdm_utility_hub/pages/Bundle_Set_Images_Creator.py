@@ -229,6 +229,7 @@ async def async_download_image(product_code, extension, session):
         return None, None
 
 def trim(im):
+    from PIL import ImageChops
     bg = Image.new(im.mode, im.size, (255, 255, 255))
     diff = ImageChops.difference(im, bg)
     bbox = diff.getbbox()
@@ -351,13 +352,18 @@ async def async_get_image_with_fallback(product_code, session):
             return content, fallback_ext
     return None, None
 
-# ---------------------- Main Processing Function ----------------------
+# ---------------------- Main Processing Function (BATCHED / PARALLEL) ----------------------
 async def process_file_async(uploaded_file, progress_bar=None, layout="horizontal"):
+    """
+    Versione aggiornata: elabora i bundle in parallelo con semaphore,
+    per evitare blocchi con molti SKU.
+    """
     session_id = st.session_state["bundle_creator_session_id"]
     base_folder = f"Bundle&Set_{session_id}"
     missing_images_excel_path = f"missing_images_{session_id}.xlsx"
     bundle_list_excel_path = f"bundle_list_{session_id}.xlsx"
 
+    # --- Criptazione (come in origine) ---
     if "encryption_key" not in st.session_state:
         st.session_state["encryption_key"] = Fernet.generate_key()
     key = st.session_state["encryption_key"]
@@ -394,29 +400,45 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
     st.write(f"File loaded: {len(data)} bundles found.")
     os.makedirs(base_folder, exist_ok=True)
 
+    # Variabili condivise tra i task
     mixed_sets_needed = False
     mixed_folder = os.path.join(base_folder, "mixed_sets")
     error_list = []
     bundle_list = []
     total = len(data)
 
-    connector = aiohttp.TCPConnector(limit=100)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        for i, (_, row) in enumerate(data.iterrows()):
+    # Tracker per progress bar globale
+    progress_tracker = {
+        "completed": 0,
+        "total": total
+    }
+
+    # ------------------- FUNZIONE PER ELABORARE UN SINGOLO BUNDLE -------------------
+    async def process_single_bundle(row_index, row, session, semaphore):
+        nonlocal mixed_sets_needed
+
+        async with semaphore:
             bundle_code = str(row['sku']).strip()
             pzns_in_set_str = str(row['pzns_in_set']).strip()
             product_codes = [code.strip() for code in pzns_in_set_str.split(',') if code.strip()]
 
             if not product_codes:
-                st.warning(f"Skipping bundle {bundle_code}: No valid product codes found.")
                 error_list.append((bundle_code, "No valid PZNs listed"))
-                continue
+                # update progress
+                progress_tracker["completed"] += 1
+                if progress_bar is not None:
+                    progress_bar.progress(
+                        progress_tracker["completed"] / progress_tracker["total"],
+                        text=f"Processing {bundle_code} ({progress_tracker['completed']}/{progress_tracker['total']})"
+                    )
+                return
 
             num_products = len(product_codes)
             is_uniform = (len(set(product_codes)) == 1)
             bundle_type = f"bundle of {num_products}" if is_uniform else "mixed"
             bundle_cross_country = False
 
+            # --- UNIFORM BUNDLE ---
             if is_uniform:
                 product_code = product_codes[0]
                 folder_name_base = f"bundle_{num_products}"
@@ -454,7 +476,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             processed_lang = True
                             processed_keys.append(lang)
                         except Exception as e:
-                            st.warning(f"Error processing {lang} image for bundle {bundle_code} (PZN: {product_code}): {e}")
                             error_list.append((bundle_code, f"{product_code} ({lang} processing error)"))
                     if processed_lang:
                         if "1-fr" not in processed_keys and "1-nl" in processed_keys:
@@ -469,7 +490,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 dup_save_path = os.path.join(folder_name, f"{bundle_code}-fr-h1.jpg")
                                 await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=JPEG_QUALITY)
                             except Exception as e:
-                                st.warning(f"Error duplicating image for missing 1-fr for bundle {bundle_code} (PZN: {product_code}): {e}")
                                 error_list.append((bundle_code, f"{product_code} (dup 1-fr processing error)"))
                         elif "1-nl" not in processed_keys and "1-fr" in processed_keys:
                             try:
@@ -483,7 +503,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 dup_save_path = os.path.join(folder_name, f"{bundle_code}-nl-h1.jpg")
                                 await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=JPEG_QUALITY)
                             except Exception as e:
-                                st.warning(f"Error duplicating image for missing 1-nl for bundle {bundle_code} (PZN: {product_code}): {e}")
                                 error_list.append((bundle_code, f"{product_code} (dup 1-nl processing error)"))
                     if not processed_lang:
                         error_list.append((bundle_code, f"{product_code} (NL/FR found but failed processing)"))
@@ -515,12 +534,12 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
                             await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=JPEG_QUALITY)
                     except Exception as e:
-                        st.warning(f"Error processing image for bundle {bundle_code} (PZN: {product_code}, Ext: {used_ext}): {e}")
                         error_list.append((bundle_code, f"{product_code} (Ext: {used_ext} processing error)"))
                 else:
                     error_list.append((bundle_code, product_code))
 
-            else:  # Mixed set
+            # ----------------- MIXED SET -----------------
+            else:
                 mixed_sets_needed = True
                 bundle_folder = os.path.join(mixed_folder, bundle_code)
                 os.makedirs(bundle_folder, exist_ok=True)
@@ -541,7 +560,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             else:
                                 suffix = f"-p{lang}"
                             file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
-                            # TRIM & SAVE
                             await asyncio.to_thread(process_and_save_trimmed_image, image_data, file_path)
                             processed_keys.append(lang)
                         # Duplicate missing language if only one is available
@@ -561,13 +579,11 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                         if st.session_state.get("fallback_ext") == "NL FR":
                             file_path_nl = os.path.join(prod_folder, f"{p_code}-nl-h1.jpg")
                             file_path_fr = os.path.join(prod_folder, f"{p_code}-fr-h1.jpg")
-                            # TRIM & SAVE both
                             await asyncio.to_thread(process_and_save_trimmed_image, result, file_path_nl)
                             await asyncio.to_thread(process_and_save_trimmed_image, result, file_path_fr)
                         else:
                             suffix = f"-p{used_ext}" if used_ext else "-h1"
                             file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
-                            # TRIM & SAVE
                             await asyncio.to_thread(process_and_save_trimmed_image, result, file_path)
                     else:
                         error_list.append((bundle_code, p_code))
@@ -575,16 +591,45 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 if item_is_cross_country:
                     bundle_cross_country = True
 
-            if progress_bar is not None:
-                progress_bar.progress((i + 1) / total, text=f"Processing {bundle_code} ({i+1}/{total})")
-            bundle_list.append([bundle_code, ', '.join(product_codes), bundle_type, "Yes" if bundle_cross_country else "No"])
+            # aggiornamento lista bundle
+            bundle_list.append([
+                bundle_code,
+                ', '.join(product_codes),
+                bundle_type,
+                "Yes" if bundle_cross_country else "No"
+            ])
 
+            # aggiorna progress
+            progress_tracker["completed"] += 1
+            if progress_bar is not None:
+                progress_bar.progress(
+                    progress_tracker["completed"] / progress_tracker["total"],
+                    text=f"Processing {bundle_code} ({progress_tracker['completed']}/{progress_tracker['total']})"
+                )
+
+    # ------------------- ESECUZIONE PARALLELA BUNDLE -------------------
+    connector = aiohttp.TCPConnector(limit=100)
+    semaphore = asyncio.Semaphore(10)  # max 10 bundle in parallelo
+
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks = []
+        for idx, (_, row) in enumerate(data.iterrows()):
+            tasks.append(
+                asyncio.create_task(process_single_bundle(idx, row, session, semaphore))
+            )
+
+        # usa as_completed per non bloccare UI
+        for f in asyncio.as_completed(tasks):
+            await f
+
+    # Pulizia mixed folder se non necessaria
     if not mixed_sets_needed and os.path.exists(mixed_folder):
         try:
             shutil.rmtree(mixed_folder)
         except Exception as e:
             st.warning(f"Could not remove unused mixed folder: {e}")
 
+    # ------------------- REPORT MISSING IMAGES -------------------
     missing_images_data = None
     missing_images_df = pd.DataFrame(columns=["PZN Bundle", "PZN with image missing"])
     if error_list:
@@ -599,6 +644,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         except Exception as e:
             st.error(f"Failed to save or read missing images Excel file: {e}")
 
+    # ------------------- REPORT BUNDLE LIST -------------------
     bundle_list_data = None
     bundle_list_df = pd.DataFrame(columns=["sku", "pzns_in_set", "bundle type", "cross-country"])
     if bundle_list:
@@ -610,17 +656,20 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
         except Exception as e:
             st.error(f"Failed to save or read bundle list Excel file: {e}")
 
+    # ------------------- ZIP CREATION -------------------
     zip_bytes = None
     if os.path.exists(base_folder) and any(os.scandir(base_folder)):
         temp_parent = f"Bundle&Set_temp_{session_id}"
-        if os.path.exists(temp_parent): shutil.rmtree(temp_parent)
+        if os.path.exists(temp_parent):
+            shutil.rmtree(temp_parent)
         os.makedirs(temp_parent, exist_ok=True)
         zip_content_folder = os.path.join(temp_parent, "Bundle&Set")
         try:
             shutil.copytree(base_folder, zip_content_folder)
         except Exception as e:
             st.error(f"Error copying files for zipping: {e}")
-            if os.path.exists(temp_parent): shutil.rmtree(temp_parent)
+            if os.path.exists(temp_parent):
+                shutil.rmtree(temp_parent)
             return None, missing_images_data, missing_images_df, bundle_list_data
         zip_base_name = f"Bundle&Set_archive_{session_id}"
         final_zip_path = f"{zip_base_name}.zip"
