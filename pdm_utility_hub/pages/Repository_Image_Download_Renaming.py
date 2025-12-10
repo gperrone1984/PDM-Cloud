@@ -280,11 +280,11 @@ if server_country == "Switzerland":
     st.markdown("""
     :information_source: **How to use:**
 
-    - Create a list of products: Rename the column **sku** or use the Quick Report in Akeneo.
-    - In Akeneo, select the following options:
-        - **File Type:** CSV or Excel  
-        - **All Attributes or Grid Context:** (for Grid Context, select ID)  
-        - **With Codes**  
+    - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
+    - :arrow_right: **In Akeneo, select the following options:**
+        - **File Type:** CSV or Excel
+        - **All Attributes or Grid Context:** (for Grid Context, select ID)
+        - **With Codes**
         - **Without Media**
     """)
 
@@ -300,8 +300,8 @@ if server_country == "Switzerland":
             ]
         ]
         for key in keys_to_remove:
-            st.session_state.pop(key, None)
-
+            if key in st.session_state:
+                del st.session_state[key]
         st.session_state.renaming_uploader_key = str(uuid.uuid4())
         st.info("Cache cleared. Please re-upload your file.")
         st.rerun()
@@ -368,6 +368,7 @@ if server_country == "Switzerland":
                     img = Image.open(BytesIO(content))
                     img = ImageOps.exif_transpose(img)
 
+                    # --- CONTROLLO UNICO: immagine originale completamente nera ---
                     extrema = img.convert("L").getextrema()
                     if extrema == (0, 0):
                         return False
@@ -434,7 +435,7 @@ if server_country == "Switzerland":
                 return errors
 
             # ======================================================
-            # MAIN PROCESSING LOOP
+            # MAIN PROCESSING LOOP (BATCH BY BATCH)
             # ======================================================
             all_errors = []
 
@@ -443,6 +444,7 @@ if server_country == "Switzerland":
 
                     for batch_index, batch_skus in enumerate(batches, start=1):
 
+                        # Reset progress bar for each batch
                         progress_bar.progress(0, text=f"Batch {batch_index}/{total_batches}")
 
                         batch_errors = asyncio.run(
@@ -461,7 +463,7 @@ if server_country == "Switzerland":
                     else:
                         st.session_state["renaming_zip_path_ch"] = None
 
-                    # --- ERROR CSV ---
+                    # --- SAVE ERROR CSV ---
                     if all_errors:
                         df_errors = pd.DataFrame(sorted(set(all_errors)), columns=["sku"])
                         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", encoding="utf-8-sig") as tmp_err:
@@ -484,18 +486,13 @@ if server_country == "Switzerland":
         with col1:
             zip_path = st.session_state.get("renaming_zip_path_ch")
             if zip_path and os.path.exists(zip_path):
-
-                # FIX: No more Chrome "Resuming…" using octet-stream
                 with open(zip_path, "rb") as f:
-                    data_zip = f.read()
-
-                st.download_button(
-                    label="Download Images",
-                    data=data_zip,
-                    file_name="switzerland_images.zip",
-                    mime="application/octet-stream",
-                    use_container_width=True
-                )
+                    st.download_button(
+                        label="Download Images",
+                        data=f,
+                        file_name="switzerland_images.zip",
+                        mime="application/zip"
+                    )
             else:
                 st.info("No images processed.")
 
@@ -503,17 +500,13 @@ if server_country == "Switzerland":
         with col2:
             err_path = st.session_state.get("renaming_error_path_ch")
             if err_path and os.path.exists(err_path):
-
                 with open(err_path, "rb") as f:
-                    data_err = f.read()
-
-                st.download_button(
-                    label="Download Missing Image List",
-                    data=data_err,
-                    file_name="errors_switzerland.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+                    st.download_button(
+                        label="Download Missing Image List",
+                        data=f,
+                        file_name="errors_switzerland.csv",
+                        mime="text/csv"
+                    )
             else:
                 st.info("No errors found.")
 
