@@ -249,6 +249,30 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ======================================================
+# AUTO RESET WHEN PAGE CHANGES
+# ======================================================
+current_page = "switzerland"
+
+if "last_page" not in st.session_state:
+    st.session_state.last_page = current_page
+
+# If switching from another page → reset everything for Switzerland
+if st.session_state.last_page != current_page:
+
+    keys_to_remove = [
+        k for k in list(st.session_state.keys())
+        if k.startswith("renaming_") or 
+           k in ["process_images_switzerland", "uploader_key", "session_id"]
+    ]
+
+    for key in keys_to_remove:
+        st.session_state.pop(key, None)
+
+    st.session_state.last_page = current_page
+    st.rerun()
+
+
+# ======================================================
 # SECTION: Switzerland (with automatic 2500 SKU batches)
 # ======================================================
 if server_country == "Switzerland":
@@ -256,11 +280,11 @@ if server_country == "Switzerland":
     st.markdown("""
     :information_source: **How to use:**
 
-    - :arrow_right: **Create a list of products (MAX 10000 sku):** Rename the column **sku** or use the Quick Report in Akeneo.
-    - :arrow_right: **In Akeneo, select the following options:**
-        - **File Type:** CSV or Excel
-        - **All Attributes or Grid Context:** (for Grid Context, select ID)
-        - **With Codes**
+    - Create a list of products: Rename the column **sku** or use the Quick Report in Akeneo.
+    - In Akeneo, select the following options:
+        - **File Type:** CSV or Excel  
+        - **All Attributes or Grid Context:** (for Grid Context, select ID)  
+        - **With Codes**  
         - **Without Media**
     """)
 
@@ -276,15 +300,15 @@ if server_country == "Switzerland":
             ]
         ]
         for key in keys_to_remove:
-            if key in st.session_state:
-                del st.session_state[key]
+            st.session_state.pop(key, None)
+
         st.session_state.renaming_uploader_key = str(uuid.uuid4())
         st.info("Cache cleared. Please re-upload your file.")
         st.rerun()
 
     # INPUTS
     manual_input = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_switzerland")
-    uploaded_file = st.file_uploader("Upload file (Excel or CSV) **MAX 10000 sku**", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
+    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
 
     if st.button("Search Images", key="process_switzerland"):
         st.session_state.renaming_start_processing_ch = True
@@ -344,7 +368,6 @@ if server_country == "Switzerland":
                     img = Image.open(BytesIO(content))
                     img = ImageOps.exif_transpose(img)
 
-                    # --- CONTROLLO UNICO: immagine originale completamente nera ---
                     extrema = img.convert("L").getextrema()
                     if extrema == (0, 0):
                         return False
@@ -411,7 +434,7 @@ if server_country == "Switzerland":
                 return errors
 
             # ======================================================
-            # MAIN PROCESSING LOOP (BATCH BY BATCH)
+            # MAIN PROCESSING LOOP
             # ======================================================
             all_errors = []
 
@@ -420,7 +443,6 @@ if server_country == "Switzerland":
 
                     for batch_index, batch_skus in enumerate(batches, start=1):
 
-                        # Reset progress bar for each batch
                         progress_bar.progress(0, text=f"Batch {batch_index}/{total_batches}")
 
                         batch_errors = asyncio.run(
@@ -439,7 +461,7 @@ if server_country == "Switzerland":
                     else:
                         st.session_state["renaming_zip_path_ch"] = None
 
-                    # --- SAVE ERROR CSV ---
+                    # --- ERROR CSV ---
                     if all_errors:
                         df_errors = pd.DataFrame(sorted(set(all_errors)), columns=["sku"])
                         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", encoding="utf-8-sig") as tmp_err:
@@ -451,50 +473,49 @@ if server_country == "Switzerland":
             st.session_state["renaming_processing_done_ch"] = True
             st.session_state.renaming_start_processing_ch = False
 
-# ======================================================
-# DOWNLOAD OUTPUTS
-# ======================================================
-if st.session_state.get("renaming_processing_done_ch", False):
-    st.markdown("---")
-    col1, col2 = st.columns(2)
+    # ======================================================
+    # DOWNLOAD OUTPUTS
+    # ======================================================
+    if st.session_state.get("renaming_processing_done_ch", False):
+        st.markdown("---")
+        col1, col2 = st.columns(2)
 
-    # ZIP
-    with col1:
-        zip_path = st.session_state.get("renaming_zip_path_ch")
-        if zip_path and os.path.exists(zip_path):
+        # ZIP
+        with col1:
+            zip_path = st.session_state.get("renaming_zip_path_ch")
+            if zip_path and os.path.exists(zip_path):
 
-            # Load file fully into memory — prevents Chrome "Resuming..."
-            with open(zip_path, "rb") as f:
-                data_zip = f.read()
+                # FIX: No more Chrome "Resuming…" using octet-stream
+                with open(zip_path, "rb") as f:
+                    data_zip = f.read()
 
-            st.download_button(
-                label="Download Images",
-                data=data_zip,
-                file_name="switzerland_images.zip",
-                mime="application/zip",
-                use_container_width=True
-            )
-        else:
-            st.info("No images processed.")
+                st.download_button(
+                    label="Download Images",
+                    data=data_zip,
+                    file_name="switzerland_images.zip",
+                    mime="application/octet-stream",
+                    use_container_width=True
+                )
+            else:
+                st.info("No images processed.")
 
-    # ERRORS CSV
-    with col2:
-        err_path = st.session_state.get("renaming_error_path_ch")
-        if err_path and os.path.exists(err_path):
+        # ERRORS CSV
+        with col2:
+            err_path = st.session_state.get("renaming_error_path_ch")
+            if err_path and os.path.exists(err_path):
 
-            with open(err_path, "rb") as f:
-                data_err = f.read()
+                with open(err_path, "rb") as f:
+                    data_err = f.read()
 
-            st.download_button(
-                label="Download Missing Image List",
-                data=data_err,
-                file_name="errors_switzerland.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        else:
-            st.info("No errors found.")
-
+                st.download_button(
+                    label="Download Missing Image List",
+                    data=data_err,
+                    file_name="errors_switzerland.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            else:
+                st.info("No errors found.")
 
 
 # ======================================================
