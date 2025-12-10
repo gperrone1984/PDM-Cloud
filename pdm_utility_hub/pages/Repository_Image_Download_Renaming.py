@@ -10,8 +10,6 @@ from PIL import Image, ImageOps, ImageChops, UnidentifiedImageError, ImageDraw
 from io import BytesIO
 import tempfile
 import uuid
-import asyncio
-import aiohttp
 import xml.etree.ElementTree as ET  # libreria standard
 import requests
 from zeep import Client, Settings
@@ -203,6 +201,30 @@ if "renaming_session_id" not in st.session_state:
     st.session_state.renaming_session_id = str(uuid.uuid4())
 
 # ---------------------------------------------------------
+# AUTO RESET QUANDO SI CAMBIA SERVER (FOCUS SU SWITZERLAND)
+# ---------------------------------------------------------
+current_page = server_country
+previous_page = st.session_state.get("last_page", None)
+
+# Se stiamo entrando su Switzerland da un'altra scelta → reset stato Switzerland
+if previous_page is not None and previous_page != current_page and current_page == "Switzerland":
+    keys_to_remove = [
+        k for k in list(st.session_state.keys())
+        if k.startswith("renaming_") or
+           k in ["process_images_switzerland", "uploader_key", "session_id",
+                 "processing_done", "zip_path", "error_path"]
+    ]
+    for key in keys_to_remove:
+        st.session_state.pop(key, None)
+    # nuovo uploader key
+    st.session_state.renaming_uploader_key = str(uuid.uuid4())
+    st.session_state.last_page = current_page
+    st.rerun()
+
+# aggiorna sempre last_page all'opzione corrente
+st.session_state.last_page = current_page
+
+# ---------------------------------------------------------
 # Function to combine SKUs from file and manual input
 # ---------------------------------------------------------
 def get_sku_list(uploaded_file_obj, manual_text):
@@ -244,32 +266,6 @@ def get_sku_list(uploaded_file_obj, manual_text):
 
     unique_sku_list = list(dict.fromkeys(sku for sku in sku_list if sku))
     return unique_sku_list
-
-import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# ======================================================
-# AUTO RESET WHEN PAGE CHANGES
-# ======================================================
-current_page = "switzerland"
-
-if "last_page" not in st.session_state:
-    st.session_state.last_page = current_page
-
-# If switching from another page → reset everything for Switzerland
-if st.session_state.last_page != current_page:
-
-    keys_to_remove = [
-        k for k in list(st.session_state.keys())
-        if k.startswith("renaming_") or 
-           k in ["process_images_switzerland", "uploader_key", "session_id"]
-    ]
-
-    for key in keys_to_remove:
-        st.session_state.pop(key, None)
-
-    st.session_state.last_page = current_page
-    st.rerun()
 
 
 # ======================================================
@@ -317,7 +313,7 @@ if server_country == "Switzerland":
         st.session_state.pop("renaming_error_path_ch", None)
 
     # ======================================================
-    # PROCESSING SECTION
+    # PROCESSING SECTION (SINCRONO, NO ASYNCIO)
     # ======================================================
     if st.session_state.get("renaming_start_processing_ch") and not st.session_state.get("renaming_processing_done_ch", False):
 
@@ -368,7 +364,7 @@ if server_country == "Switzerland":
                     img = Image.open(BytesIO(content))
                     img = ImageOps.exif_transpose(img)
 
-                    # --- CONTROLLO UNICO: immagine originale completamente nera ---
+                    # controllo immagine completamente nera
                     extrema = img.convert("L").getextrema()
                     if extrema == (0, 0):
                         return False
@@ -385,57 +381,28 @@ if server_country == "Switzerland":
                     canvas.save(img_path, "JPEG", quality=75)
                     return True
 
-                except:
+                except Exception:
                     return False
 
             # ======================================================
-            # ASYNC DOWNLOAD WITH RETRY
+            # DOWNLOAD + PROCESS (SINCRONO) CON RETRY
             # ======================================================
-            async def fetch_with_retry(session, url, retries=3):
+            def download_and_process_sku(sku, download_folder, retries=3):
+                url = get_image_url(sku)
                 for attempt in range(retries):
                     try:
-                        async with session.get(url, timeout=30) as resp:
-                            if resp.status == 200:
-                                data = await resp.read()
-                                if data:
-                                    return data
-                            await asyncio.sleep(0.5 * (attempt + 1))
-                    except:
-                        await asyncio.sleep(0.5 * (attempt + 1))
-                return None
-
-            async def fetch_and_process(session, semaphore, sku, download_folder, error_list):
-                url = get_image_url(sku)
-                async with semaphore:
-                    content = await fetch_with_retry(session, url)
-                    if content is None:
-                        error_list.append(sku)
-                        return
-                    success = await asyncio.to_thread(process_and_save, sku, content, download_folder)
-                    if not success:
-                        error_list.append(sku)
-
-            async def run_batch(batch_skus, download_folder, batch_index):
-                st.write(f"Processing batch {batch_index}/{total_batches} ({len(batch_skus)} SKUs)")
-                connector = aiohttp.TCPConnector(limit=20)
-                semaphore = asyncio.Semaphore(10)
-                errors = []
-
-                async with aiohttp.ClientSession(connector=connector) as session:
-                    tasks = [
-                        fetch_and_process(session, semaphore, sku, download_folder, errors)
-                        for sku in batch_skus
-                    ]
-                    completed = 0
-                    for f in asyncio.as_completed(tasks):
-                        await f
-                        completed += 1
-                        progress_bar.progress(completed / len(batch_skus))
-
-                return errors
+                        resp = requests.get(url, timeout=30)
+                        if resp.status_code == 200 and resp.content:
+                            ok = process_and_save(sku, resp.content, download_folder)
+                            return sku, ok
+                    except Exception:
+                        pass
+                    time.sleep(0.5 * (attempt + 1))
+                # se arriviamo qui → errore
+                return sku, False
 
             # ======================================================
-            # MAIN PROCESSING LOOP (BATCH BY BATCH)
+            # MAIN PROCESSING LOOP (BATCH BY BATCH, THREADPOOL)
             # ======================================================
             all_errors = []
 
@@ -444,13 +411,28 @@ if server_country == "Switzerland":
 
                     for batch_index, batch_skus in enumerate(batches, start=1):
 
-                        # Reset progress bar for each batch
-                        progress_bar.progress(0, text=f"Batch {batch_index}/{total_batches}")
+                        progress_bar.progress(0, text=f"Batch {batch_index}/{total_batches} - starting...")
 
-                        batch_errors = asyncio.run(
-                            run_batch(batch_skus, download_folder, batch_index)
-                        )
-                        all_errors.extend(batch_errors)
+                        total_in_batch = len(batch_skus)
+                        completed = 0
+
+                        # ThreadPool per il batch corrente
+                        with ThreadPoolExecutor(max_workers=20) as executor:
+                            future_to_sku = {
+                                executor.submit(download_and_process_sku, sku, download_folder): sku
+                                for sku in batch_skus
+                            }
+
+                            for future in as_completed(future_to_sku):
+                                sku, ok = future.result()
+                                if not ok:
+                                    all_errors.append(sku)
+                                completed += 1
+                                frac = completed / total_in_batch
+                                progress_bar.progress(
+                                    frac,
+                                    text=f"Batch {batch_index}/{total_batches} - {completed}/{total_in_batch}"
+                                )
 
                         st.success(f"Batch {batch_index}/{total_batches} completed")
 
