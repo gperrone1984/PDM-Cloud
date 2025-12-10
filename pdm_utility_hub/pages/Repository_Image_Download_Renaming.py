@@ -462,13 +462,16 @@ if server_country == "Switzerland":
         with col1:
             zip_path = st.session_state.get("renaming_zip_path_ch")
             if zip_path and os.path.exists(zip_path):
-                with open(zip_path, "rb") as f:
-                    st.download_button(
-                        label="Download Images",
-                        data=f,
-                        file_name="switzerland_images.zip",
-                        mime="application/zip"
-                    )
+              with open(zip_path, "rb") as f:
+    data_zip = f.read()
+
+st.download_button(
+    label="Download Images",
+    data=data_zip,
+    file_name="switzerland_images.zip",
+    mime="application/zip",
+    use_container_width=True
+)
             else:
                 st.info("No images processed.")
 
