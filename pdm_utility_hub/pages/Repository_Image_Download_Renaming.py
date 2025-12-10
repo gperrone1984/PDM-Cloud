@@ -451,43 +451,50 @@ if server_country == "Switzerland":
             st.session_state["renaming_processing_done_ch"] = True
             st.session_state.renaming_start_processing_ch = False
 
-    # ======================================================
-    # DOWNLOAD OUTPUTS
-    # ======================================================
-    if st.session_state.get("renaming_processing_done_ch", False):
-        st.markdown("---")
-        col1, col2 = st.columns(2)
+# ======================================================
+# DOWNLOAD OUTPUTS
+# ======================================================
+if st.session_state.get("renaming_processing_done_ch", False):
+    st.markdown("---")
+    col1, col2 = st.columns(2)
 
-        # ZIP
-        with col1:
-            zip_path = st.session_state.get("renaming_zip_path_ch")
-            if zip_path and os.path.exists(zip_path):
-              with open(zip_path, "rb") as f:
-    data_zip = f.read()
+    # ZIP
+    with col1:
+        zip_path = st.session_state.get("renaming_zip_path_ch")
+        if zip_path and os.path.exists(zip_path):
 
-st.download_button(
-    label="Download Images",
-    data=data_zip,
-    file_name="switzerland_images.zip",
-    mime="application/zip",
-    use_container_width=True
-)
-            else:
-                st.info("No images processed.")
+            # Load file fully into memory — prevents Chrome "Resuming..."
+            with open(zip_path, "rb") as f:
+                data_zip = f.read()
 
-        # ERRORS CSV
-        with col2:
-            err_path = st.session_state.get("renaming_error_path_ch")
-            if err_path and os.path.exists(err_path):
-                with open(err_path, "rb") as f:
-                    st.download_button(
-                        label="Download Missing Image List",
-                        data=f,
-                        file_name="errors_switzerland.csv",
-                        mime="text/csv"
-                    )
-            else:
-                st.info("No errors found.")
+            st.download_button(
+                label="Download Images",
+                data=data_zip,
+                file_name="switzerland_images.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+        else:
+            st.info("No images processed.")
+
+    # ERRORS CSV
+    with col2:
+        err_path = st.session_state.get("renaming_error_path_ch")
+        if err_path and os.path.exists(err_path):
+
+            with open(err_path, "rb") as f:
+                data_err = f.read()
+
+            st.download_button(
+                label="Download Missing Image List",
+                data=data_err,
+                file_name="errors_switzerland.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        else:
+            st.info("No errors found.")
+
 
 
 # ======================================================
