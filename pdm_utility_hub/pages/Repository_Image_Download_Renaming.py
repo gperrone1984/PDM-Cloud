@@ -182,13 +182,20 @@ st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")  # Separator
 
 # ----- Sidebar Content -----
-st.sidebar.markdown("<div class='sidebar-title'>PDM Image Download and Renaming App</div>", unsafe_allow_html=True)
-st.sidebar.markdown("<div class='sidebar-subtitle'>What This App Does</div>", unsafe_allow_html=True)
+st.sidebar.markdown(
+    "<div style='font-size:24px; font-weight:bold;'>PDM Image Download and Renaming App</div>",
+    unsafe_allow_html=True
+)
+st.sidebar.markdown(
+    "<div style='font-size:18px; '>What This App Does</div>",
+    unsafe_allow_html=True
+)
+
 st.sidebar.markdown("""
 <div class='sidebar-desc'>
 - 📥 Downloads images from the selected server<br>
 - 🔄 Resizes images to 1000x1000 in JPEG<br>
-- 🏷️ Renames with a '-h1, -h2, etc' suffix
+- 🏷️ Renames with a '-h1, -h2, -fr-h1, -nl-h1, etc' suffix
 </div>
 """, unsafe_allow_html=True)
 st.sidebar.markdown("<div class='server-select-label'>Select Server Image</div>", unsafe_allow_html=True)
