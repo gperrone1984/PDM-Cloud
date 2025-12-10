@@ -299,6 +299,15 @@ if server_country == "Switzerland":
 
         sku_list = get_sku_list(uploaded_file, manual_input)
 
+        # ======================================================
+        # LIMIT CHECK: MAX 10,000 SKUs
+        # ======================================================
+        MAX_SKU = 10000
+        if sku_list and len(sku_list) > MAX_SKU:
+            st.error(f"Too many SKUs provided: {len(sku_list)}. Maximum allowed is {MAX_SKU}.")
+            st.session_state.renaming_start_processing_ch = False
+            st.stop()
+
         if not sku_list:
             st.warning("Please upload a file or paste some SKUs to process.")
             st.session_state.renaming_start_processing_ch = False
@@ -476,7 +485,6 @@ if server_country == "Switzerland":
                     )
             else:
                 st.info("No errors found.")
-
 
 
 # ======================================================
