@@ -283,7 +283,7 @@ if server_country == "Switzerland":
     st.markdown("""
     :information_source: **How to use:**
 
-    - :arrow_right: **Create a list of products (Max 10000 sku:** Rename the column **sku** or use the Quick Report in Akeneo.
+    - :arrow_right: **Create a list of products (Max 10000 sku):** Rename the column **sku** or use the Quick Report in Akeneo.
     - :arrow_right: **In Akeneo, select the following options:**
         - **File Type:** CSV or Excel
         - **All Attributes or Grid Context:** (for Grid Context, select ID)
