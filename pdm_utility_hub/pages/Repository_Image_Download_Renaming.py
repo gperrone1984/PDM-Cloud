@@ -283,7 +283,7 @@ if server_country == "Switzerland":
     st.markdown("""
     :information_source: **How to use:**
 
-    - :arrow_right: **Create a list of products:** Rename the column **sku** or use the Quick Report in Akeneo.
+    - :arrow_right: **Create a list of products (Max 10000 sku:** Rename the column **sku** or use the Quick Report in Akeneo.
     - :arrow_right: **In Akeneo, select the following options:**
         - **File Type:** CSV or Excel
         - **All Attributes or Grid Context:** (for Grid Context, select ID)
@@ -311,7 +311,7 @@ if server_country == "Switzerland":
 
     # INPUTS
     manual_input = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_switzerland")
-    uploaded_file = st.file_uploader("Upload file (Excel or CSV)", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
+    uploaded_file = st.file_uploader("Upload file (Excel or CSV) **Max 10000 sku**", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
 
     if st.button("Search Images", key="process_switzerland"):
         st.session_state.renaming_start_processing_ch = True
