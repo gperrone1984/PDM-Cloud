@@ -538,7 +538,7 @@ elif server_country == "Farmadati":
             ]
         ]
 
-        # pulizia cache delle funzioni cache_resource
+        # pulizia cache delle funzioni cache_resource (se già definite)
         if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
             get_farmadati_mapping.clear()
         if 'get_farmadati_tr017_mapping' in globals() and hasattr(get_farmadati_tr017_mapping, 'clear'):
@@ -567,175 +567,6 @@ elif server_country == "Farmadati":
         if "renaming_error_data_fd" in st.session_state:
             del st.session_state.renaming_error_data_fd
 
-    # Credenziali e config Farmadati
-    USERNAME = "BDF250621d"
-    PASSWORD = "wTP1tvSZ"
-    WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
-    DATASET_CODE = "TDZ"
-
-    @st.cache_resource(ttl=3600, show_spinner=False)
-    def get_farmadati_mapping(_username, _password):
-        """
-        Mapping da AIC (senza zeri iniziali) a nome file immagine (dataset TDZ).
-        """
-        history = HistoryPlugin()
-        transport = Transport(cache=InMemoryCache(), timeout=180)
-        settings = Settings(strict=False, xml_huge_tree=True)
-        try:
-            client = Client(
-                wsdl=WSDL_URL,
-                wsse=UsernameToken(_username, _password),
-                transport=transport,
-                plugins=[history],
-                settings=settings
-            )
-            response = client.service.GetDataSet(_username, _password, DATASET_CODE, "GETRECORDS", 1)
-        except Exception as e:
-            st.error(f"Farmadati Connection/Fetch Error (TDZ): {e}")
-            st.stop()
-
-        if response.CodEsito != "OK" or response.ByteListFile is None:
-            st.error(f"Farmadati API Error (TDZ): {response.CodEsito} - {response.DescEsito}")
-            st.stop()
-
-        code_to_image = {}
-        try:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                zip_path_fd = os.path.join(tmp_dir, f"{DATASET_CODE}.zip")
-                with open(zip_path_fd, "wb") as f:
-                    f.write(response.ByteListFile)
-
-                with zipfile.ZipFile(zip_path_fd, 'r') as z:
-                    xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
-                    if not xml_file:
-                        raise FileNotFoundError("XML not in ZIP (TDZ)")
-                    z.extract(xml_file, tmp_dir)
-                    xml_full_path = os.path.join(tmp_dir, xml_file)
-
-                context = ET.iterparse(xml_full_path, events=('end',))
-                for _, elem in context:
-                    if elem.tag == 'RECORD':
-                        t218 = elem.find('FDI_T218')  # AIC
-                        t438 = elem.find('FDI_T438')  # Nome file immagine
-                        if t218 is not None and t438 is not None and t218.text and t438.text:
-                            aic = t218.text.strip().lstrip("0")
-                            if aic:
-                                code_to_image[aic] = t438.text.strip()
-                    elem.clear()
-            return code_to_image
-        except Exception as e:
-            st.error(f"Error parsing Farmadati XML (TDZ): {e}")
-            st.stop()
-
-    @st.cache_resource(ttl=3600, show_spinner=False)
-    def get_farmadati_tr017_mapping(_username, _password):
-        """
-        Mapping da codice prodotto (FDI_T139, senza zeri iniziali) a codice produttore (FDI_T142).
-        Dataset: TR017.
-        """
-        DATASET_TR017 = "TR017"
-        history = HistoryPlugin()
-        transport = Transport(cache=InMemoryCache(), timeout=180)
-        settings = Settings(strict=False, xml_huge_tree=True)
-
-        try:
-            client = Client(
-                wsdl=WSDL_URL,
-                wsse=UsernameToken(_username, _password),
-                transport=transport,
-                plugins=[history],
-                settings=settings
-            )
-            response = client.service.GetDataSet(_username, _password, DATASET_TR017, "GETRECORDS", 1)
-        except Exception as e:
-            st.error(f"Farmadati TR017 Connection/Fetch Error: {e}")
-            st.stop()
-
-        if response.CodEsito != "OK" or response.ByteListFile is None:
-            st.error(f"Farmadati TR017 API Error: {response.CodEsito} - {response.DescEsito}")
-            st.stop()
-
-        product_to_manufacturer = {}
-
-        try:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                zip_path_fd = os.path.join(tmp_dir, f"{DATASET_TR017}.zip")
-                with open(zip_path_fd, "wb") as f:
-                    f.write(response.ByteListFile)
-
-                with zipfile.ZipFile(zip_path_fd, 'r') as z:
-                    xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
-                    if not xml_file:
-                        raise FileNotFoundError("XML TR017 not in ZIP")
-                    z.extract(xml_file, tmp_dir)
-                    xml_full_path = os.path.join(tmp_dir, xml_file)
-
-                context = ET.iterparse(xml_full_path, events=('end',))
-                for _, elem in context:
-                    if elem.tag == 'RECORD':
-                        t139 = elem.find('FDI_T139')  # Codice prodotto
-                        t142 = elem.find('FDI_T142')  # Codice produttore
-
-                        if t139 is not None and t142 is not None and t139.text and t142.text:
-                            product_code = t139.text.strip().lstrip("0")   # togli zeri iniziali
-                            manufacturer_code = t142.text.strip()          # manteniamo così com'è
-                            if product_code:
-                                product_to_manufacturer[product_code] = manufacturer_code
-                    elem.clear()
-
-            return product_to_manufacturer
-
-        except Exception as e:
-            st.error(f"Error parsing Farmadati TR017 XML: {e}")
-            st.stop()
-
-    def process_image_fd(img_bytes):
-        try:
-            try:
-                img = Image.open(BytesIO(img_bytes))
-            except UnidentifiedImageError:
-                content_str = img_bytes.decode('utf-8', errors='ignore')
-                if "System.Web.HttpException" in content_str or "ASP.NET" in content_str:
-                    raise ValueError("ASPX error page received instead of image")
-                else:
-                    raise ValueError("Unknown image format")
-
-            if img.mode not in ('RGB', 'L'):
-                img = img.convert('RGB')
-
-            if img.mode == 'L':
-                extrema = img.getextrema()
-            else:
-                gray = img.convert('L')
-                extrema = gray.getextrema()
-
-            if extrema == (0, 0) or extrema == (255, 255):
-                raise ValueError("Empty/blank image")
-
-            img = ImageOps.exif_transpose(img)
-
-            bg = Image.new(img.mode, img.size, (255, 255, 255))
-            diff = ImageChops.difference(img, bg)
-            bbox = diff.getbbox()
-            if bbox:
-                img = img.crop(bbox)
-
-            if img.width == 0 or img.height == 0:
-                raise ValueError("Empty image after trimming")
-
-            img.thumbnail((1000, 1000), Image.LANCZOS)
-
-            canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
-            offset = ((1000 - img.width) // 2, (1000 - img.height) // 2)
-            canvas.paste(img, offset)
-
-            buffer = BytesIO()
-            canvas.save(buffer, "JPEG", quality=95)
-            buffer.seek(0)
-            return buffer
-        except Exception as e:
-            raise RuntimeError(f"Image processing failed: {str(e)}")
-
     if st.session_state.get("renaming_start_processing_fd") and not st.session_state.get("renaming_processing_done_fd", False):
         sku_list_fd = get_sku_list(farmadati_file, manual_input_fd)
         if not sku_list_fd:
@@ -744,101 +575,265 @@ elif server_country == "Farmadati":
         else:
             st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
 
+            # Credenziali e config Farmadati
+            USERNAME = "BDF250621d"
+            PASSWORD = "wTP1tvSZ"
+            WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
+            DATASET_CODE = "TDZ"
+
+            @st.cache_resource(ttl=3600, show_spinner=False)
+            def get_farmadati_mapping(_username, _password):
+                """
+                Mapping da AIC (FDI_T218, senza zeri iniziali) a nome file immagine (FDI_T438) dal dataset TDZ.
+                """
+                history = HistoryPlugin()
+                transport = Transport(cache=InMemoryCache(), timeout=180)
+                settings = Settings(strict=False, xml_huge_tree=True)
+                try:
+                    client = Client(
+                        wsdl=WSDL_URL,
+                        wsse=UsernameToken(_username, _password),
+                        transport=transport,
+                        plugins=[history],
+                        settings=settings
+                    )
+                    response = client.service.GetDataSet(_username, _password, DATASET_CODE, "GETRECORDS", 1)
+                except Exception as e:
+                    st.error(f"Farmadati Connection/Fetch Error: {e}")
+                    st.stop()
+
+                if response.CodEsito != "OK" or response.ByteListFile is None:
+                    st.error(f"Farmadati API Error: {response.CodEsito} - {response.DescEsito}")
+                    st.stop()
+
+                code_to_image = {}
+                try:
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        zip_path_fd = os.path.join(tmp_dir, f"{DATASET_CODE}.zip")
+                        with open(zip_path_fd, "wb") as f:
+                            f.write(response.ByteListFile)
+                        with zipfile.ZipFile(zip_path_fd, 'r') as z:
+                            xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
+                            if not xml_file:
+                                raise FileNotFoundError("XML not in ZIP")
+                            z.extract(xml_file, tmp_dir)
+                            xml_full_path = os.path.join(tmp_dir, xml_file)
+
+                        context = ET.iterparse(xml_full_path, events=('end',))
+                        for _, elem in context:
+                            if elem.tag == 'RECORD':
+                                t218 = elem.find('FDI_T218')  # AIC
+                                t438 = elem.find('FDI_T438')  # Nome file immagine
+                                if t218 is not None and t438 is not None and t218.text and t438.text:
+                                    aic = t218.text.strip().lstrip("0")
+                                    if aic:
+                                        code_to_image[aic] = t438.text.strip()
+                                elem.clear()
+                    return code_to_image
+                except Exception as e:
+                    st.error(f"Error parsing Farmadati XML: {e}")
+                    st.stop()
+
+            @st.cache_resource(ttl=3600, show_spinner=False)
+            def get_farmadati_tr017_mapping(_username, _password):
+                """
+                Mapping da codice prodotto (FDI_T139, senza zeri iniziali)
+                a codice produttore (FDI_T142) dal dataset TR017.
+                """
+                DATASET_TR017 = "TR017"
+                history = HistoryPlugin()
+                transport = Transport(cache=InMemoryCache(), timeout=180)
+                settings = Settings(strict=False, xml_huge_tree=True)
+
+                try:
+                    client = Client(
+                        wsdl=WSDL_URL,
+                        wsse=UsernameToken(_username, _password),
+                        transport=transport,
+                        plugins=[history],
+                        settings=settings
+                    )
+                    response = client.service.GetDataSet(_username, _password, DATASET_TR017, "GETRECORDS", 1)
+                except Exception as e:
+                    st.error(f"Farmadati TR017 Connection/Fetch Error: {e}")
+                    st.stop()
+
+                if response.CodEsito != "OK" or response.ByteListFile is None:
+                    st.error(f"Farmadati TR017 API Error: {response.CodEsito} - {response.DescEsito}")
+                    st.stop()
+
+                product_to_manufacturer = {}
+
+                try:
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        zip_path_fd = os.path.join(tmp_dir, f"{DATASET_TR017}.zip")
+                        with open(zip_path_fd, "wb") as f:
+                            f.write(response.ByteListFile)
+
+                        with zipfile.ZipFile(zip_path_fd, 'r') as z:
+                            xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
+                            if not xml_file:
+                                raise FileNotFoundError("XML TR017 not in ZIP")
+                            z.extract(xml_file, tmp_dir)
+                            xml_full_path = os.path.join(tmp_dir, xml_file)
+
+                        context = ET.iterparse(xml_full_path, events=('end',))
+                        for _, elem in context:
+                            if elem.tag == 'RECORD':
+                                t139 = elem.find('FDI_T139')  # Codice prodotto
+                                t142 = elem.find('FDI_T142')  # Codice produttore
+
+                                if t139 is not None and t142 is not None and t139.text and t142.text:
+                                    product_code = t139.text.strip().lstrip("0")   # togli zeri iniziali
+                                    manufacturer_code = t142.text.strip()          # manteniamo così com'è
+                                    if product_code:
+                                        product_to_manufacturer[product_code] = manufacturer_code
+                            elem.clear()
+
+                    return product_to_manufacturer
+
+                except Exception as e:
+                    st.error(f"Error parsing Farmadati TR017 XML: {e}")
+                    st.stop()
+
+            def process_image_fd(img_bytes):
+                try:
+                    try:
+                        img = Image.open(BytesIO(img_bytes))
+                    except UnidentifiedImageError:
+                        content_str = img_bytes.decode('utf-8', errors='ignore')
+                        if "System.Web.HttpException" in content_str or "ASP.NET" in content_str:
+                            raise ValueError("ASPX error page received instead of image")
+                        else:
+                            raise ValueError("Unknown image format")
+
+                    if img.mode not in ('RGB', 'L'):
+                        img = img.convert('RGB')
+
+                    if img.mode == 'L':
+                        extrema = img.getextrema()
+                    else:
+                        gray = img.convert('L')
+                        extrema = gray.getextrema()
+
+                    if extrema == (0, 0) or extrema == (255, 255):
+                        raise ValueError("Empty/blank image")
+
+                    img = ImageOps.exif_transpose(img)
+
+                    bg = Image.new(img.mode, img.size, (255, 255, 255))
+                    diff = ImageChops.difference(img, bg)
+                    bbox = diff.getbbox()
+                    if bbox:
+                        img = img.crop(bbox)
+
+                    if img.width == 0 or img.height == 0:
+                        raise ValueError("Empty image after trimming")
+
+                    img.thumbnail((1000, 1000), Image.LANCZOS)
+
+                    canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
+                    offset = ((1000 - img.width) // 2, (1000 - img.height) // 2)
+                    canvas.paste(img, offset)
+
+                    buffer = BytesIO()
+                    canvas.save(buffer, "JPEG", quality=95)
+                    buffer.seek(0)
+                    return buffer
+                except Exception as e:
+                    raise RuntimeError(f"Image processing failed: {str(e)}")
+
             try:
                 with st.spinner("Loading Farmadati mappings (TDZ + TR017, this may take a minute)..."):
                     aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
                     product_to_manufacturer = get_farmadati_tr017_mapping(USERNAME, PASSWORD)
 
-                if not aic_to_image:
-                    st.error("Farmadati TDZ mapping failed.")
-                    st.session_state.renaming_start_processing_fd = False
+                total_fd = len(sku_list_fd)
+                progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
+                error_list_fd = []
+                processed_files_count = 0
+                zip_buffer = BytesIO()
+
+                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+                    with requests.Session() as http_session:
+                        for i, sku in enumerate(sku_list_fd):
+                            progress_bar_fd.progress(
+                                (i + 1) / total_fd,
+                                text=f"Processing {sku} ({i + 1}/{total_fd})"
+                            )
+                            original_sku = str(sku).strip()
+
+                            clean_sku = original_sku.upper()
+                            if not clean_sku.startswith("IT"):
+                                clean_sku = "IT" + clean_sku.lstrip("0")
+                            else:
+                                clean_sku = "IT" + clean_sku[2:].lstrip("0")
+
+                            if not clean_sku[2:]:
+                                error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
+                                continue
+
+                            # --- Controllo produttore da TR017 ---
+                            manufacturer_code = None
+                            if product_to_manufacturer:
+                                manufacturer_code = product_to_manufacturer.get(clean_sku[2:])  # AIC senza "IT"
+                                if manufacturer_code in MANUFACTURER_EXCLUDE:
+                                    error_list_fd.append(
+                                        (original_sku, f"Image skipped: excluded manufacturer {manufacturer_code}")
+                                    )
+                                    continue
+                            # --- Fine controllo produttore ---
+
+                            image_name = aic_to_image.get(clean_sku[2:])
+                            if not image_name:
+                                error_list_fd.append((original_sku, "AIC not in TDZ mapping"))
+                                continue
+
+                            image_url = (
+                                "https://ws.farmadati.it/WS_DOC/GetDoc.aspx"
+                                f"?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
+                            )
+
+                            try:
+                                response = http_session.get(image_url, timeout=45)
+                                response.raise_for_status()
+
+                                content_type = response.headers.get('Content-Type', '').lower()
+                                if 'text/html' in content_type or 'text/plain' in content_type:
+                                    if "System.Web.HttpException" in response.text:
+                                        raise ValueError("ASPX error page received")
+
+                                if not response.content:
+                                    raise ValueError("Empty response")
+
+                                processed_buffer = process_image_fd(response.content)
+                                output_filename = f"{clean_sku}-h1.jpg"
+                                zipf.writestr(output_filename, processed_buffer.read())
+                                processed_files_count += 1
+
+                            except requests.exceptions.RequestException as req_e:
+                                reason = f"Network Error: {req_e}"
+                                if hasattr(req_e, 'response') and req_e.response is not None:
+                                    reason = f"HTTP {req_e.response.status_code}"
+                                error_list_fd.append((original_sku, reason))
+                            except Exception as e:
+                                error_list_fd.append((original_sku, f"Error: {str(e)}"))
+
+                progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
+
+                if processed_files_count > 0:
+                    zip_buffer.seek(0)
+                    st.session_state["renaming_zip_buffer_fd"] = zip_buffer
                 else:
-                    if not product_to_manufacturer:
-                        st.warning("Farmadati TR017 mapping is empty. Manufacturer filter will not be applied.")
+                    st.session_state["renaming_zip_buffer_fd"] = None
 
-                    total_fd = len(sku_list_fd)
-                    progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
-                    error_list_fd = []
-                    processed_files_count = 0
-                    zip_buffer = BytesIO()
-
-                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-                        with requests.Session() as http_session:
-                            for i, sku in enumerate(sku_list_fd):
-                                progress_bar_fd.progress((i + 1) / total_fd, text=f"Processing {sku} ({i + 1}/{total_fd})")
-                                original_sku = str(sku).strip()
-
-                                clean_sku = original_sku.upper()
-                                if not clean_sku.startswith("IT"):
-                                    clean_sku = "IT" + clean_sku.lstrip("0")
-                                else:
-                                    clean_sku = "IT" + clean_sku[2:].lstrip("0")
-
-                                if not clean_sku[2:]:
-                                    error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
-                                    continue
-
-                                # --- Controllo produttore da TR017 ---
-                                manufacturer_code = None
-                                if product_to_manufacturer:
-                                    manufacturer_code = product_to_manufacturer.get(clean_sku[2:])  # chiave = AIC senza IT
-                                    if manufacturer_code in MANUFACTURER_EXCLUDE:
-                                        error_list_fd.append(
-                                            (original_sku, f"Image skipped: excluded manufacturer {manufacturer_code}")
-                                        )
-                                        continue
-                                # --- Fine controllo produttore ---
-
-                                image_name = aic_to_image.get(clean_sku[2:])
-                                if not image_name:
-                                    error_list_fd.append((original_sku, "AIC not in TDZ mapping"))
-                                    continue
-
-                                image_url = (
-                                    "https://ws.farmadati.it/WS_DOC/GetDoc.aspx"
-                                    f"?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
-                                )
-
-                                try:
-                                    response = http_session.get(image_url, timeout=45)
-                                    response.raise_for_status()
-
-                                    content_type = response.headers.get('Content-Type', '').lower()
-                                    if 'text/html' in content_type or 'text/plain' in content_type:
-                                        if "System.Web.HttpException" in response.text:
-                                            raise ValueError("ASPX error page received")
-
-                                    if not response.content:
-                                        raise ValueError("Empty response")
-
-                                    processed_buffer = process_image_fd(response.content)
-                                    output_filename = f"{clean_sku}-h1.jpg"
-                                    zipf.writestr(output_filename, processed_buffer.read())
-                                    processed_files_count += 1
-
-                                except requests.exceptions.RequestException as req_e:
-                                    reason = f"Network Error: {req_e}"
-                                    if hasattr(req_e, 'response') and req_e.response is not None:
-                                        reason = f"HTTP {req_e.response.status_code}"
-                                    error_list_fd.append((original_sku, reason))
-                                except Exception as e:
-                                    error_list_fd.append((original_sku, f"Error: {str(e)}"))
-
-                    progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
-
-                    if processed_files_count > 0:
-                        zip_buffer.seek(0)
-                        st.session_state["renaming_zip_buffer_fd"] = zip_buffer
-                    else:
-                        st.session_state["renaming_zip_buffer_fd"] = None
-
-                    if error_list_fd:
-                        error_df = pd.DataFrame(error_list_fd, columns=["SKU", "Reason"])
-                        error_df = error_df.drop_duplicates().sort_values(by="SKU")
-                        csv_error = error_df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-                        st.session_state["renaming_error_data_fd"] = csv_error
-                    else:
-                        st.session_state["renaming_error_data_fd"] = None
+                if error_list_fd:
+                    error_df = pd.DataFrame(error_list_fd, columns=["SKU", "Reason"])
+                    error_df = error_df.drop_duplicates().sort_values(by="SKU")
+                    csv_error = error_df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+                    st.session_state["renaming_error_data_fd"] = csv_error
+                else:
+                    st.session_state["renaming_error_data_fd"] = None
 
             except Exception as critical_e:
                 st.error(f"Critical Error during Farmadati processing: {critical_e}")
