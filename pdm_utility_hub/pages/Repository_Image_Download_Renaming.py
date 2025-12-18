@@ -537,16 +537,10 @@ elif server_country == "Farmadati":
                 "process_images_farmadati",
             ]
         ]
-
-        # pulizia cache delle funzioni cache_resource/cache_data (se già definite)
-        if "load_dataset_fd" in globals() and hasattr(load_dataset_fd, "clear"):
-            load_dataset_fd.clear()
-        if "get_farmadati_client" in globals() and hasattr(get_farmadati_client, "clear"):
-            get_farmadati_client.clear()
-
         for key in keys_to_remove:
             if key in st.session_state:
                 del st.session_state[key]
+
         st.session_state.renaming_uploader_key = str(uuid.uuid4())
         st.info("Cache cleared. Please re-upload your file.")
         st.rerun()
@@ -575,7 +569,7 @@ elif server_country == "Farmadati":
             st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
 
             # ==============================================
-            # CONFIGURAZIONE FARMADATI (stile altro script)
+            # CONFIGURAZIONE FARMADATI (come nell'altro script)
             # ==============================================
             USERNAME = "BDF250621d"
             PASSWORD = "wTP1tvSZ"
@@ -584,119 +578,193 @@ elif server_country == "Farmadati":
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_client():
                 session = requests.Session()
-                transport = Transport(session=session, timeout=120)
+                transport = Transport(session=session, timeout=180)
                 settings = Settings(strict=False, xml_huge_tree=True)
                 client = Client(wsdl=WSDL, transport=transport, settings=settings)
                 return client
 
-            @st.cache_data(ttl=3600, show_spinner=False)
-            def load_dataset_fd(dataset_code: str, page: int = 1) -> pd.DataFrame:
+            def load_tdz_mapping():
                 """
-                Carica un dataset Farmadati (stile load_dataset del tuo altro script),
-                restituendo un DataFrame pandas.
+                TDZ: mapping AIC (FDI_T218, senza zeri iniziali) -> nome file immagine (FDI_T438)
+                Usando parsing streaming per ridurre l'uso di memoria.
                 """
                 client = get_farmadati_client()
                 try:
                     resp = client.service.GetDataSet(
                         Username=USERNAME,
                         Password=PASSWORD,
-                        CodiceSetDati=dataset_code,
+                        CodiceSetDati="TDZ",
                         Modalita="GETRECORDS",
-                        PageN=page,
+                        PageN=1
                     )
                 except Exception as e:
-                    st.error(f"Farmadati GetDataSet error for {dataset_code}: {e}")
+                    st.error(f"Farmadati TDZ GetDataSet error: {e}")
                     st.stop()
 
-                if resp.CodEsito != "OK":
-                    st.error(f"Errore nel dataset {dataset_code}: {resp.DescEsito}")
+                if resp.CodEsito != "OK" or resp.ByteListFile is None:
+                    st.error(f"TDZ error: {resp.CodEsito} - {resp.DescEsito}")
                     st.stop()
 
-                if getattr(resp, "OutputValue", None) == "EMPTY" or resp.ByteListFile is None:
-                    return pd.DataFrame()
+                mapping = {}
+                try:
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        zip_path = os.path.join(tmp_dir, "TDZ.zip")
+                        with open(zip_path, "wb") as f:
+                            f.write(resp.ByteListFile)
+
+                        with zipfile.ZipFile(zip_path, "r") as z:
+                            xml_file = next(
+                                (name for name in z.namelist() if name.lower().endswith(".xml")),
+                                None
+                            )
+                            if not xml_file:
+                                raise FileNotFoundError("TDZ XML not found in ZIP")
+                            z.extract(xml_file, tmp_dir)
+                            xml_full_path = os.path.join(tmp_dir, xml_file)
+
+                        # Streaming parse dell'XML
+                        context = ET.iterparse(xml_full_path, events=("end",))
+                        for _, elem in context:
+                            if elem.tag == "RECORD":
+                                t218 = elem.find("FDI_T218")  # AIC
+                                t438 = elem.find("FDI_T438")  # nome file immagine
+                                if t218 is not None and t438 is not None and t218.text and t438.text:
+                                    aic_norm = t218.text.strip().lstrip("0")
+                                    if aic_norm:
+                                        mapping[aic_norm] = t438.text.strip()
+                            elem.clear()
+
+                    return mapping
+                except Exception as e:
+                    st.error(f"Error parsing TDZ XML: {e}")
+                    st.stop()
+
+            def load_tr017_mapping_for_aics(target_aics: set[str]):
+                """
+                TR017: mapping filtrato per i soli AIC richiesti.
+                FDI_T139 (codice prodotto) -> FDI_T142 (codice produttore)
+                """
+                if not target_aics:
+                    return {}
+
+                client = get_farmadati_client()
+                try:
+                    resp = client.service.GetDataSet(
+                        Username=USERNAME,
+                        Password=PASSWORD,
+                        CodiceSetDati="TR017",
+                        Modalita="GETRECORDS",
+                        PageN=1
+                    )
+                except Exception as e:
+                    st.error(f"Farmadati TR017 GetDataSet error: {e}")
+                    st.stop()
+
+                if resp.CodEsito != "OK" or resp.ByteListFile is None:
+                    st.error(f"TR017 error: {resp.CodEsito} - {resp.DescEsito}")
+                    st.stop()
+
+                mapping = {}
+                remaining = set(target_aics)
 
                 try:
-                    # Decompressione ZIP -> XML -> DataFrame
-                    z = zipfile.ZipFile(BytesIO(resp.ByteListFile))
-                    xml_name = [n for n in z.namelist() if n.lower().endswith(".xml")][0]
-                    xml_data = z.read(xml_name)
-                    df = pd.read_xml(BytesIO(xml_data))
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        zip_path = os.path.join(tmp_dir, "TR017.zip")
+                        with open(zip_path, "wb") as f:
+                            f.write(resp.ByteListFile)
 
-                    # Normalizzazione eventuale chiave FDI_0001 (se presente)
-                    if "FDI_0001" in df.columns:
-                        df["FDI_0001"] = (
-                            df["FDI_0001"]
-                            .astype(str)
-                            .str.strip()
-                            .str.zfill(9)
-                        )
+                        with zipfile.ZipFile(zip_path, "r") as z:
+                            xml_file = next(
+                                (name for name in z.namelist() if name.lower().endswith(".xml")),
+                                None
+                            )
+                            if not xml_file:
+                                raise FileNotFoundError("TR017 XML not found in ZIP")
+                            z.extract(xml_file, tmp_dir)
+                            xml_full_path = os.path.join(tmp_dir, xml_file)
 
-                    return df
+                        context = ET.iterparse(xml_full_path, events=("end",))
+                        for _, elem in context:
+                            if elem.tag == "RECORD":
+                                t139 = elem.find("FDI_T139")  # codice prodotto
+                                t142 = elem.find("FDI_T142")  # codice produttore
+                                if t139 is not None and t142 is not None and t139.text and t142.text:
+                                    code_norm = t139.text.strip().lstrip("0")
+                                    if code_norm in remaining:
+                                        mapping[code_norm] = t142.text.strip()
+                                        remaining.remove(code_norm)
+                                        if not remaining:
+                                            # abbiamo trovato tutti quelli che ci interessano
+                                            break
+                            elem.clear()
+
+                    return mapping
                 except Exception as e:
-                    st.error(f"Error parsing dataset {dataset_code}: {e}")
+                    st.error(f"Error parsing TR017 XML: {e}")
                     st.stop()
 
-            try:
-                with st.spinner("Loading Farmadati datasets (TDZ + TR017)..."):
-                    df_tdz = load_dataset_fd("TDZ")
-                    df_tr017 = load_dataset_fd("TR017")
-
-                    if df_tdz.empty:
-                        st.error("TDZ dataset is empty or could not be loaded.")
-                        st.session_state.renaming_start_processing_fd = False
-                        st.session_state.renaming_processing_done_fd = True
-                        st.stop()
-
-                    if df_tr017.empty:
-                        st.warning("TR017 dataset is empty. Manufacturer filter will not be applied.")
-                        product_to_manufacturer = {}
-                    else:
-                        # Costruisci mapping: FDI_T139 (codice prodotto) -> FDI_T142 (produttore)
-                        if not {"FDI_T139", "FDI_T142"}.issubset(df_tr017.columns):
-                            st.warning("TR017 does not contain columns FDI_T139/FDI_T142. Manufacturer filter disabled.")
-                            product_to_manufacturer = {}
+            def process_image_fd(img_bytes: bytes) -> BytesIO:
+                try:
+                    try:
+                        img = Image.open(BytesIO(img_bytes))
+                    except UnidentifiedImageError:
+                        content_str = img_bytes.decode("utf-8", errors="ignore")
+                        if "System.Web.HttpException" in content_str or "ASP.NET" in content_str:
+                            raise ValueError("ASPX error page received instead of image")
                         else:
-                            df_tr017["FDI_T139_norm"] = (
-                                df_tr017["FDI_T139"]
-                                .astype(str)
-                                .str.strip()
-                                .str.lstrip("0")
-                            )
-                            df_tr017["FDI_T142_norm"] = (
-                                df_tr017["FDI_T142"]
-                                .astype(str)
-                                .str.strip()
-                            )
-                            product_to_manufacturer = dict(
-                                zip(df_tr017["FDI_T139_norm"], df_tr017["FDI_T142_norm"])
-                            )
+                            raise ValueError("Unknown image format")
 
-                    # Mapping TDZ: AIC (FDI_T218) -> nome file immagine (FDI_T438)
-                    if not {"FDI_T218", "FDI_T438"}.issubset(df_tdz.columns):
-                        st.error("TDZ does not contain columns FDI_T218/FDI_T438.")
-                        st.session_state.renaming_start_processing_fd = False
-                        st.session_state.renaming_processing_done_fd = True
-                        st.stop()
+                    if img.mode not in ("RGB", "L"):
+                        img = img.convert("RGB")
 
-                    df_tdz["FDI_T218_norm"] = (
-                        df_tdz["FDI_T218"]
-                        .astype(str)
-                        .str.strip()
-                        .str.lstrip("0")
-                    )
-                    df_tdz["FDI_T438_norm"] = (
-                        df_tdz["FDI_T438"]
-                        .astype(str)
-                        .str.strip()
-                    )
+                    if img.mode == "L":
+                        extrema = img.getextrema()
+                    else:
+                        gray = img.convert("L")
+                        extrema = gray.getextrema()
 
-                    aic_to_image = dict(
-                        zip(df_tdz["FDI_T218_norm"], df_tdz["FDI_T438_norm"])
-                    )
+                    if extrema == (0, 0) or extrema == (255, 255):
+                        raise ValueError("Empty/blank image")
 
-                # ------------------------------------------
-                # Elaborazione SKU -> immagini con filtro
-                # ------------------------------------------
+                    img = ImageOps.exif_transpose(img)
+
+                    bg = Image.new(img.mode, img.size, (255, 255, 255))
+                    diff = ImageChops.difference(img, bg)
+                    bbox = diff.getbbox()
+                    if bbox:
+                        img = img.crop(bbox)
+
+                    if img.width == 0 or img.height == 0:
+                        raise ValueError("Empty image after trimming")
+
+                    img.thumbnail((1000, 1000), Image.LANCZOS)
+
+                    canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
+                    offset = ((1000 - img.width) // 2, (1000 - img.height) // 2)
+                    canvas.paste(img, offset)
+
+                    buffer = BytesIO()
+                    canvas.save(buffer, "JPEG", quality=95)
+                    buffer.seek(0)
+                    return buffer
+                except Exception as e:
+                    raise RuntimeError(f"Image processing failed: {str(e)}")
+
+            try:
+                # Set AIC target (normalizzati) in base alle SKU richieste
+                aic_targets = set()
+                for sku in sku_list_fd:
+                    s = str(sku).strip().upper()
+                    if s.startswith("IT"):
+                        s = s[2:]
+                    s = s.lstrip("0")
+                    if s:
+                        aic_targets.add(s)
+
+                with st.spinner("Loading Farmadati mappings (TDZ + TR017) ..."):
+                    aic_to_image = load_tdz_mapping()
+                    product_to_manufacturer = load_tr017_mapping_for_aics(aic_targets)
+
                 total_fd = len(sku_list_fd)
                 progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
                 error_list_fd = []
@@ -712,26 +780,21 @@ elif server_country == "Farmadati":
                             )
                             original_sku = str(sku).strip()
 
-                            # Normalizzazione SKU come nel tuo codice originale
+                            # Normalizzazione SKU come nel tuo codice
                             clean_sku = original_sku.upper()
                             if not clean_sku.startswith("IT"):
                                 clean_sku = "IT" + clean_sku.lstrip("0")
                             else:
                                 clean_sku = "IT" + clean_sku[2:].lstrip("0")
 
-                            # AIC senza "IT"
-                            aic_key = clean_sku[2:]
-                            aic_key_norm = aic_key.lstrip("0")
-
-                            if not aic_key_norm:
+                            # AIC senza "IT", normalizzato
+                            aic_key = clean_sku[2:].lstrip("0")
+                            if not aic_key:
                                 error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
                                 continue
 
                             # --- Filtro produttore da TR017 ---
-                            manufacturer_code = None
-                            if product_to_manufacturer:
-                                manufacturer_code = product_to_manufacturer.get(aic_key_norm)
-
+                            manufacturer_code = product_to_manufacturer.get(aic_key)
                             if manufacturer_code is not None:
                                 manu_norm = manufacturer_code.strip().upper()
                                 if manu_norm in MANUFACTURER_EXCLUDE:
@@ -741,7 +804,7 @@ elif server_country == "Farmadati":
                                     continue
                             # --- Fine filtro produttore ---
 
-                            image_name = aic_to_image.get(aic_key_norm)
+                            image_name = aic_to_image.get(aic_key)
                             if not image_name:
                                 error_list_fd.append((original_sku, "AIC not in TDZ mapping"))
                                 continue
@@ -763,51 +826,9 @@ elif server_country == "Farmadati":
                                 if not response.content:
                                     raise ValueError("Empty response")
 
-                                # --- processa immagine come nel tuo codice ---
-                                try:
-                                    img = Image.open(BytesIO(response.content))
-                                except UnidentifiedImageError:
-                                    content_str = response.content.decode("utf-8", errors="ignore")
-                                    if "System.Web.HttpException" in content_str or "ASP.NET" in content_str:
-                                        raise ValueError("ASPX error page received instead of image")
-                                    else:
-                                        raise ValueError("Unknown image format")
-
-                                if img.mode not in ("RGB", "L"):
-                                    img = img.convert("RGB")
-
-                                if img.mode == "L":
-                                    extrema = img.getextrema()
-                                else:
-                                    gray = img.convert("L")
-                                    extrema = gray.getextrema()
-
-                                if extrema == (0, 0) or extrema == (255, 255):
-                                    raise ValueError("Empty/blank image")
-
-                                img = ImageOps.exif_transpose(img)
-
-                                bg = Image.new(img.mode, img.size, (255, 255, 255))
-                                diff = ImageChops.difference(img, bg)
-                                bbox = diff.getbbox()
-                                if bbox:
-                                    img = img.crop(bbox)
-
-                                if img.width == 0 or img.height == 0:
-                                    raise ValueError("Empty image after trimming")
-
-                                img.thumbnail((1000, 1000), Image.LANCZOS)
-
-                                canvas = Image.new("RGB", (1000, 1000), (255, 255, 255))
-                                offset = ((1000 - img.width) // 2, (1000 - img.height) // 2)
-                                canvas.paste(img, offset)
-
-                                buffer = BytesIO()
-                                canvas.save(buffer, "JPEG", quality=95)
-                                buffer.seek(0)
-
+                                processed_buffer = process_image_fd(response.content)
                                 output_filename = f"{clean_sku}-h1.jpg"
-                                zipf.writestr(output_filename, buffer.read())
+                                zipf.writestr(output_filename, processed_buffer.read())
                                 processed_files_count += 1
 
                             except requests.exceptions.RequestException as req_e:
@@ -867,6 +888,7 @@ elif server_country == "Farmadati":
                 )
             else:
                 st.info("No errors found.")
+
 
 
 
