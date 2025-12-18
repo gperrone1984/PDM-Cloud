@@ -820,7 +820,7 @@ elif server_country == "Farmadati":
                                         (original_sku, f"Image skipped: excluded manufacturer {manufacturer_code_norm}")
                                     )
                                     # DEBUG opzionale:
-                                    # st.write("DEBUG_SKIP", original_sku, aic_key, manufacturer_code_norm)
+                                     st.write("DEBUG_SKIP", original_sku, aic_key, manufacturer_code_norm)
                                     continue
                             # --- Fine controllo produttore ---
 
