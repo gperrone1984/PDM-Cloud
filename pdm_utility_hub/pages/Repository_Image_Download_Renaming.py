@@ -613,7 +613,10 @@ elif server_country == "Farmadati":
                         with open(zip_path_fd, "wb") as f:
                             f.write(response.ByteListFile)
                         with zipfile.ZipFile(zip_path_fd, 'r') as z:
-                            xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
+                            xml_file = next(
+                                (name for name in z.namelist() if name.upper().endswith('.XML')),
+                                None
+                            )
                             if not xml_file:
                                 raise FileNotFoundError("XML not in ZIP")
                             z.extract(xml_file, tmp_dir)
@@ -637,8 +640,8 @@ elif server_country == "Farmadati":
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_tr017_mapping(_username, _password):
                 """
-                Mapping da codice prodotto (FDI_T139, esattamente come nel file)
-                a codice produttore (FDI_T142) dal dataset TR017.
+                Mapping da codice prodotto (FDI_T139) a codice produttore (FDI_T142) dal dataset TR017.
+                Salviamo più chiavi per FDI_T139 per coprire variazioni (zeri iniziali, lunghezze diverse).
                 """
                 DATASET_TR017 = "TR017"
                 history = HistoryPlugin()
@@ -671,7 +674,10 @@ elif server_country == "Farmadati":
                             f.write(response.ByteListFile)
 
                         with zipfile.ZipFile(zip_path_fd, 'r') as z:
-                            xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
+                            xml_file = next(
+                                (name for name in z.namelist() if name.upper().endswith('.XML')),
+                                None
+                            )
                             if not xml_file:
                                 raise FileNotFoundError("XML TR017 not in ZIP")
                             z.extract(xml_file, tmp_dir)
@@ -680,16 +686,33 @@ elif server_country == "Farmadati":
                         context = ET.iterparse(xml_full_path, events=('end',))
                         for _, elem in context:
                             if elem.tag == 'RECORD':
-                                t139 = elem.find('FDI_T139')  # Codice prodotto (AIC / codice prodotto)
+                                t139 = elem.find('FDI_T139')  # Codice prodotto
                                 t142 = elem.find('FDI_T142')  # Codice produttore
 
                                 if t139 is not None and t142 is not None and t139.text and t142.text:
-                                    # qui NON togliamo zeri: salviamo il codice così com'è nel file
-                                    product_code = t139.text.strip()
+                                    raw_code = t139.text.strip()
                                     manufacturer_code = t142.text.strip()
-                                    if product_code:
-                                        product_to_manufacturer[product_code] = manufacturer_code
+
+                                    if not raw_code:
+                                        elem.clear()
+                                        continue
+
+                                    # Diverse varianti della chiave prodotto
+                                    keys = set()
+                                    keys.add(raw_code)  # così com'è nel file
+                                    keys.add(raw_code.lstrip("0"))  # senza zeri iniziali
+                                    # versione a 9 cifre, tipico AIC
+                                    keys.add(raw_code.lstrip("0").zfill(9))
+
+                                    for k in keys:
+                                        if k:  # evita chiave vuota
+                                            product_to_manufacturer[k] = manufacturer_code
+
                             elem.clear()
+
+                    # DEBUG opzionale:
+                    # st.write("DEBUG_TR017_SIZE", len(product_to_manufacturer))
+                    # st.write("DEBUG_TR017_SAMPLE", list(product_to_manufacturer.items())[:10])
 
                     return product_to_manufacturer
 
@@ -764,13 +787,13 @@ elif server_country == "Farmadati":
                             )
                             original_sku = str(sku).strip()
 
+                            # Normalizzazione SKU -> AIC
                             clean_sku = original_sku.upper()
                             if not clean_sku.startswith("IT"):
                                 clean_sku = "IT" + clean_sku.lstrip("0")
                             else:
                                 clean_sku = "IT" + clean_sku[2:].lstrip("0")
 
-                            # AIC "pulito" usato per TDZ
                             aic_key = clean_sku[2:]
                             if not aic_key:
                                 error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
@@ -779,12 +802,16 @@ elif server_country == "Farmadati":
                             # --- Controllo produttore da TR017 ---
                             manufacturer_code = None
                             if product_to_manufacturer:
-                                # 1) prova chiave così com'è nel TR017
-                                manufacturer_code = product_to_manufacturer.get(aic_key)
-                                # 2) se non trovato, prova a zfill(9) (tipico AIC a 9 cifre)
-                                if manufacturer_code is None:
-                                    aic_9 = aic_key.zfill(9)
-                                    manufacturer_code = product_to_manufacturer.get(aic_9)
+                                # tentiamo varie chiavi compatibili con come abbiamo salvato
+                                candidates = {
+                                    aic_key,
+                                    aic_key.lstrip("0"),
+                                    aic_key.lstrip("0").zfill(9)
+                                }
+                                for cand in candidates:
+                                    if cand in product_to_manufacturer:
+                                        manufacturer_code = product_to_manufacturer[cand]
+                                        break
 
                             if manufacturer_code is not None:
                                 manufacturer_code_norm = manufacturer_code.strip().upper()
@@ -792,6 +819,8 @@ elif server_country == "Farmadati":
                                     error_list_fd.append(
                                         (original_sku, f"Image skipped: excluded manufacturer {manufacturer_code_norm}")
                                     )
+                                    # DEBUG opzionale:
+                                    # st.write("DEBUG_SKIP", original_sku, aic_key, manufacturer_code_norm)
                                     continue
                             # --- Fine controllo produttore ---
 
@@ -879,6 +908,7 @@ elif server_country == "Farmadati":
                 )
             else:
                 st.info("No errors found.")
+
 
 
 # ======================================================
