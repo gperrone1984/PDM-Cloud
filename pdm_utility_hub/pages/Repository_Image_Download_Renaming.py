@@ -516,8 +516,8 @@ elif server_country == "Farmadati":
         - **Without Media**
     """)
 
-    # --- Costante: produttori esclusi (normalizzati) ---
-    MANUFACTURER_EXCLUDE = {c.strip().upper() for c in ["2769", "6681", "088H", "6832"]}
+    # Produttori che NON devono scaricare l'immagine
+    MANUFACTURER_EXCLUDE = {"2769", "6681", "088H", "6832"}
 
     # --- Reset Button ---
     if st.button("🧹 Clear Cache and Reset Data"):
@@ -537,17 +537,15 @@ elif server_country == "Farmadati":
                 "process_images_farmadati",
             ]
         ]
-
-        # pulizia cache delle funzioni cache_resource (se già definite)
-        if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
+        # pulizia cache delle funzioni cache_resource, se già definite
+        if "get_farmadati_mapping" in globals() and hasattr(get_farmadati_mapping, "clear"):
             get_farmadati_mapping.clear()
-        if 'get_farmadati_tr017_mapping' in globals() and hasattr(get_farmadati_tr017_mapping, 'clear'):
+        if "get_farmadati_tr017_mapping" in globals() and hasattr(get_farmadati_tr017_mapping, "clear"):
             get_farmadati_tr017_mapping.clear()
 
         for key in keys_to_remove:
             if key in st.session_state:
                 del st.session_state[key]
-
         st.session_state.renaming_uploader_key = str(uuid.uuid4())
         st.info("Cache cleared. Please re-upload your file.")
         st.rerun()
@@ -578,7 +576,7 @@ elif server_country == "Farmadati":
             # Credenziali e config Farmadati
             USERNAME = "BDF250621d"
             PASSWORD = "wTP1tvSZ"
-            WSDL_URL = 'http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl'
+            WSDL_URL = "http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl"
             DATASET_CODE = "TDZ"
 
             @st.cache_resource(ttl=3600, show_spinner=False)
@@ -595,7 +593,7 @@ elif server_country == "Farmadati":
                         wsse=UsernameToken(_username, _password),
                         transport=transport,
                         plugins=[history],
-                        settings=settings
+                        settings=settings,
                     )
                     response = client.service.GetDataSet(_username, _password, DATASET_CODE, "GETRECORDS", 1)
                 except Exception as e:
@@ -612,21 +610,21 @@ elif server_country == "Farmadati":
                         zip_path_fd = os.path.join(tmp_dir, f"{DATASET_CODE}.zip")
                         with open(zip_path_fd, "wb") as f:
                             f.write(response.ByteListFile)
-                        with zipfile.ZipFile(zip_path_fd, 'r') as z:
+                        with zipfile.ZipFile(zip_path_fd, "r") as z:
                             xml_file = next(
-                                (name for name in z.namelist() if name.upper().endswith('.XML')),
-                                None
+                                (name for name in z.namelist() if name.upper().endswith(".XML")),
+                                None,
                             )
                             if not xml_file:
                                 raise FileNotFoundError("XML not in ZIP")
                             z.extract(xml_file, tmp_dir)
                             xml_full_path = os.path.join(tmp_dir, xml_file)
 
-                        context = ET.iterparse(xml_full_path, events=('end',))
+                        context = ET.iterparse(xml_full_path, events=("end",))
                         for _, elem in context:
-                            if elem.tag == 'RECORD':
-                                t218 = elem.find('FDI_T218')  # AIC
-                                t438 = elem.find('FDI_T438')  # Nome file immagine
+                            if elem.tag == "RECORD":
+                                t218 = elem.find("FDI_T218")  # AIC
+                                t438 = elem.find("FDI_T438")  # Nome file immagine
                                 if t218 is not None and t438 is not None and t218.text and t438.text:
                                     aic = t218.text.strip().lstrip("0")
                                     if aic:
@@ -640,8 +638,8 @@ elif server_country == "Farmadati":
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_tr017_mapping(_username, _password):
                 """
-                Mapping da codice prodotto (FDI_T139) a codice produttore (FDI_T142) dal dataset TR017.
-                Salviamo più chiavi per FDI_T139 per coprire variazioni (zeri iniziali, lunghezze diverse).
+                Mapping da codice prodotto (FDI_T139, senza zeri iniziali)
+                a codice produttore (FDI_T142) dal dataset TR017.
                 """
                 DATASET_TR017 = "TR017"
                 history = HistoryPlugin()
@@ -654,7 +652,7 @@ elif server_country == "Farmadati":
                         wsse=UsernameToken(_username, _password),
                         transport=transport,
                         plugins=[history],
-                        settings=settings
+                        settings=settings,
                     )
                     response = client.service.GetDataSet(_username, _password, DATASET_TR017, "GETRECORDS", 1)
                 except Exception as e:
@@ -673,46 +671,28 @@ elif server_country == "Farmadati":
                         with open(zip_path_fd, "wb") as f:
                             f.write(response.ByteListFile)
 
-                        with zipfile.ZipFile(zip_path_fd, 'r') as z:
+                        with zipfile.ZipFile(zip_path_fd, "r") as z:
                             xml_file = next(
-                                (name for name in z.namelist() if name.upper().endswith('.XML')),
-                                None
+                                (name for name in z.namelist() if name.upper().endswith(".XML")),
+                                None,
                             )
                             if not xml_file:
                                 raise FileNotFoundError("XML TR017 not in ZIP")
                             z.extract(xml_file, tmp_dir)
                             xml_full_path = os.path.join(tmp_dir, xml_file)
 
-                        context = ET.iterparse(xml_full_path, events=('end',))
+                        context = ET.iterparse(xml_full_path, events=("end",))
                         for _, elem in context:
-                            if elem.tag == 'RECORD':
-                                t139 = elem.find('FDI_T139')  # Codice prodotto
-                                t142 = elem.find('FDI_T142')  # Codice produttore
+                            if elem.tag == "RECORD":
+                                t139 = elem.find("FDI_T139")  # Codice prodotto
+                                t142 = elem.find("FDI_T142")  # Codice produttore
 
                                 if t139 is not None and t142 is not None and t139.text and t142.text:
-                                    raw_code = t139.text.strip()
-                                    manufacturer_code = t142.text.strip()
-
-                                    if not raw_code:
-                                        elem.clear()
-                                        continue
-
-                                    # Diverse varianti della chiave prodotto
-                                    keys = set()
-                                    keys.add(raw_code)  # così com'è nel file
-                                    keys.add(raw_code.lstrip("0"))  # senza zeri iniziali
-                                    # versione a 9 cifre, tipico AIC
-                                    keys.add(raw_code.lstrip("0").zfill(9))
-
-                                    for k in keys:
-                                        if k:  # evita chiave vuota
-                                            product_to_manufacturer[k] = manufacturer_code
-
+                                    code = t139.text.strip().lstrip("0")
+                                    manu = t142.text.strip()
+                                    if code:
+                                        product_to_manufacturer[code] = manu
                             elem.clear()
-
-                    # DEBUG opzionale:
-                    # st.write("DEBUG_TR017_SIZE", len(product_to_manufacturer))
-                    # st.write("DEBUG_TR017_SAMPLE", list(product_to_manufacturer.items())[:10])
 
                     return product_to_manufacturer
 
@@ -725,19 +705,19 @@ elif server_country == "Farmadati":
                     try:
                         img = Image.open(BytesIO(img_bytes))
                     except UnidentifiedImageError:
-                        content_str = img_bytes.decode('utf-8', errors='ignore')
+                        content_str = img_bytes.decode("utf-8", errors="ignore")
                         if "System.Web.HttpException" in content_str or "ASP.NET" in content_str:
                             raise ValueError("ASPX error page received instead of image")
                         else:
                             raise ValueError("Unknown image format")
 
-                    if img.mode not in ('RGB', 'L'):
-                        img = img.convert('RGB')
+                    if img.mode not in ("RGB", "L"):
+                        img = img.convert("RGB")
 
-                    if img.mode == 'L':
+                    if img.mode == "L":
                         extrema = img.getextrema()
                     else:
-                        gray = img.convert('L')
+                        gray = img.convert("L")
                         extrema = gray.getextrema()
 
                     if extrema == (0, 0) or extrema == (255, 255):
@@ -783,50 +763,40 @@ elif server_country == "Farmadati":
                         for i, sku in enumerate(sku_list_fd):
                             progress_bar_fd.progress(
                                 (i + 1) / total_fd,
-                                text=f"Processing {sku} ({i + 1}/{total_fd})"
+                                text=f"Processing {sku} ({i + 1}/{total_fd})",
                             )
                             original_sku = str(sku).strip()
 
-                            # Normalizzazione SKU -> AIC
                             clean_sku = original_sku.upper()
                             if not clean_sku.startswith("IT"):
                                 clean_sku = "IT" + clean_sku.lstrip("0")
                             else:
                                 clean_sku = "IT" + clean_sku[2:].lstrip("0")
 
-                            aic_key = clean_sku[2:]
-                            if not aic_key:
+                            if not clean_sku[2:]:
                                 error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
                                 continue
 
-                            # --- Controllo produttore da TR017 ---
+                            # AIC usato per i mapping TDZ/TR017
+                            aic_key = clean_sku[2:]
+
+                            # --- Filtro produttore TR017 ---
                             manufacturer_code = None
                             if product_to_manufacturer:
-                                # tentiamo varie chiavi compatibili con come abbiamo salvato
-                                candidates = {
-                                    aic_key,
-                                    aic_key.lstrip("0"),
-                                    aic_key.lstrip("0").zfill(9)
-                                }
-                                for cand in candidates:
-                                    if cand in product_to_manufacturer:
-                                        manufacturer_code = product_to_manufacturer[cand]
-                                        break
+                                manufacturer_code = product_to_manufacturer.get(aic_key.lstrip("0"))
 
                             if manufacturer_code is not None:
-                                manufacturer_code_norm = manufacturer_code.strip().upper()
-                                if manufacturer_code_norm in MANUFACTURER_EXCLUDE:
+                                manu_norm = manufacturer_code.strip().upper()
+                                if manu_norm in MANUFACTURER_EXCLUDE:
                                     error_list_fd.append(
-                                        (original_sku, f"Image skipped: excluded manufacturer {manufacturer_code_norm}")
+                                        (original_sku, f"Image skipped: excluded manufacturer {manu_norm}")
                                     )
-                                    # DEBUG opzionale:
-                                     st.write("DEBUG_SKIP", original_sku, aic_key, manufacturer_code_norm)
                                     continue
-                            # --- Fine controllo produttore ---
+                            # --- Fine filtro produttore ---
 
                             image_name = aic_to_image.get(aic_key)
                             if not image_name:
-                                error_list_fd.append((original_sku, "AIC not in TDZ mapping"))
+                                error_list_fd.append((original_sku, "AIC not in mapping"))
                                 continue
 
                             image_url = (
@@ -838,8 +808,8 @@ elif server_country == "Farmadati":
                                 response = http_session.get(image_url, timeout=45)
                                 response.raise_for_status()
 
-                                content_type = response.headers.get('Content-Type', '').lower()
-                                if 'text/html' in content_type or 'text/plain' in content_type:
+                                content_type = response.headers.get("Content-Type", "").lower()
+                                if "text/html" in content_type or "text/plain" in content_type:
                                     if "System.Web.HttpException" in response.text:
                                         raise ValueError("ASPX error page received")
 
@@ -853,7 +823,7 @@ elif server_country == "Farmadati":
 
                             except requests.exceptions.RequestException as req_e:
                                 reason = f"Network Error: {req_e}"
-                                if hasattr(req_e, 'response') and req_e.response is not None:
+                                if hasattr(req_e, "response") and req_e.response is not None:
                                     reason = f"HTTP {req_e.response.status_code}"
                                 error_list_fd.append((original_sku, reason))
                             except Exception as e:
@@ -870,7 +840,7 @@ elif server_country == "Farmadati":
                 if error_list_fd:
                     error_df = pd.DataFrame(error_list_fd, columns=["SKU", "Reason"])
                     error_df = error_df.drop_duplicates().sort_values(by="SKU")
-                    csv_error = error_df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+                    csv_error = error_df.to_csv(index=False, sep=";", encoding="utf-8-sig").encode("utf-8-sig")
                     st.session_state["renaming_error_data_fd"] = csv_error
                 else:
                     st.session_state["renaming_error_data_fd"] = None
@@ -892,7 +862,7 @@ elif server_country == "Farmadati":
                     data=zip_data,
                     file_name=f"farmadati_images_{st.session_state.renaming_session_id[:6]}.zip",
                     mime="application/zip",
-                    key="dl_fd_zip"
+                    key="dl_fd_zip",
                 )
             else:
                 st.info("No images processed.")
@@ -904,10 +874,11 @@ elif server_country == "Farmadati":
                     data=error_data,
                     file_name=f"errors_farmadati_{st.session_state.renaming_session_id[:6]}.csv",
                     mime="text/csv",
-                    key="dl_fd_err"
+                    key="dl_fd_err",
                 )
             else:
                 st.info("No errors found.")
+
 
 
 
