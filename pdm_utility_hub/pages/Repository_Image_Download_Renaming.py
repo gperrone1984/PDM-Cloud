@@ -516,8 +516,8 @@ elif server_country == "Farmadati":
         - **Without Media**
     """)
 
-    # --- Costante: produttori esclusi ---
-    MANUFACTURER_EXCLUDE = {"2769", "6681", "088H", "6832"}
+    # --- Costante: produttori esclusi (normalizzati) ---
+    MANUFACTURER_EXCLUDE = {c.strip().upper() for c in ["2769", "6681", "088H", "6832"]}
 
     # --- Reset Button ---
     if st.button("🧹 Clear Cache and Reset Data"):
@@ -631,13 +631,13 @@ elif server_country == "Farmadati":
                                 elem.clear()
                     return code_to_image
                 except Exception as e:
-                    st.error(f"Error parsing Farmadati XML: {e}")
+                    st.error(f"Error parsing Farmadati XML (TDZ): {e}")
                     st.stop()
 
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_tr017_mapping(_username, _password):
                 """
-                Mapping da codice prodotto (FDI_T139, senza zeri iniziali)
+                Mapping da codice prodotto (FDI_T139, esattamente come nel file)
                 a codice produttore (FDI_T142) dal dataset TR017.
                 """
                 DATASET_TR017 = "TR017"
@@ -680,12 +680,13 @@ elif server_country == "Farmadati":
                         context = ET.iterparse(xml_full_path, events=('end',))
                         for _, elem in context:
                             if elem.tag == 'RECORD':
-                                t139 = elem.find('FDI_T139')  # Codice prodotto
+                                t139 = elem.find('FDI_T139')  # Codice prodotto (AIC / codice prodotto)
                                 t142 = elem.find('FDI_T142')  # Codice produttore
 
                                 if t139 is not None and t142 is not None and t139.text and t142.text:
-                                    product_code = t139.text.strip().lstrip("0")   # togli zeri iniziali
-                                    manufacturer_code = t142.text.strip()          # manteniamo così com'è
+                                    # qui NON togliamo zeri: salviamo il codice così com'è nel file
+                                    product_code = t139.text.strip()
+                                    manufacturer_code = t142.text.strip()
                                     if product_code:
                                         product_to_manufacturer[product_code] = manufacturer_code
                             elem.clear()
@@ -769,22 +770,32 @@ elif server_country == "Farmadati":
                             else:
                                 clean_sku = "IT" + clean_sku[2:].lstrip("0")
 
-                            if not clean_sku[2:]:
+                            # AIC "pulito" usato per TDZ
+                            aic_key = clean_sku[2:]
+                            if not aic_key:
                                 error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
                                 continue
 
                             # --- Controllo produttore da TR017 ---
                             manufacturer_code = None
                             if product_to_manufacturer:
-                                manufacturer_code = product_to_manufacturer.get(clean_sku[2:])  # AIC senza "IT"
-                                if manufacturer_code in MANUFACTURER_EXCLUDE:
+                                # 1) prova chiave così com'è nel TR017
+                                manufacturer_code = product_to_manufacturer.get(aic_key)
+                                # 2) se non trovato, prova a zfill(9) (tipico AIC a 9 cifre)
+                                if manufacturer_code is None:
+                                    aic_9 = aic_key.zfill(9)
+                                    manufacturer_code = product_to_manufacturer.get(aic_9)
+
+                            if manufacturer_code is not None:
+                                manufacturer_code_norm = manufacturer_code.strip().upper()
+                                if manufacturer_code_norm in MANUFACTURER_EXCLUDE:
                                     error_list_fd.append(
-                                        (original_sku, f"Image skipped: excluded manufacturer {manufacturer_code}")
+                                        (original_sku, f"Image skipped: excluded manufacturer {manufacturer_code_norm}")
                                     )
                                     continue
                             # --- Fine controllo produttore ---
 
-                            image_name = aic_to_image.get(clean_sku[2:])
+                            image_name = aic_to_image.get(aic_key)
                             if not image_name:
                                 error_list_fd.append((original_sku, "AIC not in TDZ mapping"))
                                 continue
