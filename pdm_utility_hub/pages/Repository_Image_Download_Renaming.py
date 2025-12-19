@@ -561,8 +561,8 @@ elif server_country == "Farmadati":
             # -----------------------------------------------------------------
             # CONFIG: credenziali + WSDL METHOD 1
             # -----------------------------------------------------------------
-            USERNAME = "IL_TUO_USERNAME"
-            PASSWORD = "LA_TUA_PASSWORD"
+            USERNAME = "BDF250621d"
+            PASSWORD = "wTP1tvSZ"
             # Method 1 (M1) – HTTPS consigliato
             WSDL_URL = "https://webservices.farmadati.it/WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl"
             DATASET_CODE_TR017 = "TR017"   # Set dati con FDI_T139 / FDI_T142
