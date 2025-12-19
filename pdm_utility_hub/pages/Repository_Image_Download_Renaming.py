@@ -518,15 +518,19 @@ elif server_country == "Farmadati":
 
     # --- Reset Button ---
     if st.button("🧹 Clear Cache and Reset Data"):
-        keys_to_remove = [k for k in st.session_state.keys()
-                          if k.startswith("renaming_") or k in [
-                              "uploader_key", "session_id", "processing_done", "zip_path",
-                              "error_path", "farmadati_zip", "farmadati_errors",
-                              "farmadati_ready", "process_images_switzerland",
-                              "process_images_farmadati"
-                          ]]
+        keys_to_remove = [
+            k for k in st.session_state.keys()
+            if k.startswith("renaming_") or k in [
+                "uploader_key", "session_id", "processing_done", "zip_path",
+                "error_path", "farmadati_zip", "farmadati_errors",
+                "farmadati_ready", "process_images_switzerland",
+                "process_images_farmadati"
+            ]
+        ]
         if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
             get_farmadati_mapping.clear()
+        if 'get_farmadati_client' in globals() and hasattr(get_farmadati_client, 'clear'):
+            get_farmadati_client.clear()
         for key in keys_to_remove:
             if key in st.session_state:
                 del st.session_state[key]
@@ -563,111 +567,132 @@ elif server_country == "Farmadati":
         else:
             st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
 
+            # === CONFIG: credenziali + WSDL Method 1 + dataset TDZ ===
             USERNAME = "BDF250621d"
             PASSWORD = "wTP1tvSZ"
-
-            # Method 1 (M1) – HTTPS
             WSDL_URL = "https://webservices.farmadati.it/WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl"
-            DATASET_CODE = "TDZ"  # come nel tuo codice originale
+            DATASET_CODE = "TDZ"  # come nel Colab e nel tuo script originale
 
+            # ==========================================================
+            # CLIENT SOAP + tipi Filter / ArrayOfFilter (come in Colab)
+            # ==========================================================
             @st.cache_resource(ttl=3600, show_spinner=False)
-            def get_farmadati_mapping(_username, _password):
+            def get_farmadati_client():
                 """
-                Usa il METHOD 1 (ExecuteQuery) sul dataset TDZ per costruire
-                la mappa: AIC (FDI_T218, senza zeri iniziali) -> nome file immagine (FDI_T438).
-                Sostituisce il vecchio GetDataSet+ZIP con una paginazione via ExecuteQuery
-                e parsing XML con ElementTree.
+                Crea il client SOAP Method 1 e trova dinamicamente i tipi
+                Filter e ArrayOfFilter, come nel codice Colab.
                 """
-                history = HistoryPlugin()
-                transport = Transport(cache=InMemoryCache(), timeout=180)
                 settings = Settings(strict=False, xml_huge_tree=True)
+                client = Client(wsdl=WSDL_URL, settings=settings)
 
-                try:
-                    client = Client(
-                        wsdl=WSDL_URL,
-                        transport=transport,
-                        plugins=[history],
-                        settings=settings
+                FilterType = None
+                ArrayOfFilterType = None
+
+                for t in client.wsdl.types.types:
+                    qn = getattr(t, "qname", None)
+                    if qn is None:
+                        continue
+                    if qn.localname == "Filter":
+                        FilterType = t
+                    elif qn.localname == "ArrayOfFilter":
+                        ArrayOfFilterType = t
+
+                if FilterType is None or ArrayOfFilterType is None:
+                    raise RuntimeError(
+                        "Non sono riuscito a trovare i tipi 'Filter' o 'ArrayOfFilter' nel WSDL. "
+                        "Verifica il WSDL o stampa client.wsdl.types per analizzare i tipi disponibili."
                     )
-                except Exception as e:
-                    st.error(f"Farmadati Connection Error (Method 1 client init): {e}")
-                    st.stop()
+
+                return client, FilterType, ArrayOfFilterType
+
+            # ==========================================================
+            # MAPPATURA AIC -> NOME FILE IMMAGINE
+            # usa la logica Colab: filtro su FDI_T218, leggo FDI_T438
+            # ==========================================================
+            @st.cache_resource(ttl=3600, show_spinner=False)
+            def get_farmadati_mapping(_username, _password, sku_list):
+                """
+                Per ogni SKU ricava l'AIC (come nel tuo codice),
+                poi interroga TDZ con ExecuteQuery (Method 1)
+                usando FDI_T218 = AIC e legge FDI_T438.
+
+                Restituisce: dict { AIC (senza zeri) : nomefile immagine }.
+                """
+                client, FilterType, ArrayOfFilterType = get_farmadati_client()
+
+                # ricavo gli AIC univoci dalla lista SKU con la stessa logica
+                # che usi nel loop principale
+                unique_aics = set()
+                for sku in sku_list:
+                    original_sku = str(sku).strip()
+                    clean_sku = original_sku.upper()
+                    if not clean_sku.startswith("IT"):
+                        clean_sku = "IT" + clean_sku.lstrip("0")
+                    else:
+                        clean_sku = "IT" + clean_sku[2:].lstrip("0")
+
+                    aic = clean_sku[2:]  # parte dopo "IT"
+                    aic = aic.lstrip("0")
+                    if aic:
+                        unique_aics.add(aic)
 
                 code_to_image = {}
-                page = 1
-                page_size = 100  # max 100 record/pagina per ExecuteQuery
 
-                try:
-                    while True:
-                        response = client.service.ExecuteQuery(
+                for aic in unique_aics:
+                    # --- identico concetto del Colab: filtro su FDI_T218 ---
+                    filtro_obj = FilterType(
+                        Key="FDI_T218",
+                        Operator="=",
+                        OrGroup=0,
+                        Value=aic
+                    )
+                    filtri = ArrayOfFilterType(Filter=[filtro_obj])
+
+                    try:
+                        result = client.service.ExecuteQuery(
                             Username=_username,
                             Password=_password,
-                            CodiceSetDati=DATASET_CODE,              # "TDZ"
-                            CampiDaEstrarre=["FDI_T218", "FDI_T438"],
-                            Filtri=None,                             # nessun filtro: leggo tutto TDZ
+                            CodiceSetDati=DATASET_CODE,
+                            CampiDaEstrarre=["FDI_T438"],  # solo nome file immagine
+                            Filtri=filtri,
                             Ordinamento=None,
                             Distinct=False,
                             Count=False,
-                            PageN=page,
-                            PagingN=page_size
+                            PageN=1,
+                            PagingN=100
                         )
+                    except Exception:
+                        # se una query fallisce, salto quell'AIC
+                        continue
 
-                        if response.CodEsito != "OK":
-                            st.error(
-                                f"Farmadati API Error (page {page}): "
-                                f"{response.CodEsito} - {response.DescEsito}"
-                            )
-                            st.stop()
+                    if result.CodEsito != "OK":
+                        # se l'esito non è OK, salto
+                        continue
 
-                        # Fine dati
-                        if response.OutputValue in (None, "EMPTY") or response.NumRecords == 0:
-                            break
+                    if result.OutputValue == "EMPTY":
+                        # nessun record per questo AIC
+                        continue
 
-                        xml_str = response.OutputValue
+                    # parsing XML in DataFrame, come nel Colab
+                    try:
+                        df = pd.read_xml(io.StringIO(result.OutputValue))
+                    except Exception:
+                        continue
 
-                        # Parsing XML manuale: cerchiamo tutti gli elementi che hanno FDI_T218 e FDI_T438
-                        try:
-                            root = ET.fromstring(xml_str)
-                        except ET.ParseError as e:
-                            st.error(f"Error parsing Farmadati XML from ExecuteQuery (page {page}): {e}")
-                            st.stop()
+                    if "FDI_T438" not in df.columns:
+                        # struttura inattesa: salto
+                        continue
 
-                        # Non assumiamo che il tag sia "RECORD": qualsiasi elemento che contenga i due figli va bene
-                        for elem in root.iter():
-                            t218 = elem.find("FDI_T218")
-                            t438 = elem.find("FDI_T438")
-                            if (
-                                t218 is not None and t438 is not None
-                                and t218.text and t438.text
-                            ):
-                                aic_raw = t218.text.strip()
-                                img_raw = t438.text.strip()
-                                if not aic_raw or not img_raw:
-                                    continue
+                    img_values = df["FDI_T438"].dropna().unique().tolist()
+                    if img_values:
+                        # prendo il primo nome file immagine
+                        code_to_image[aic] = img_values[0]
 
-                                # stessa logica di normalizzazione del tuo codice originale
-                                aic_norm = aic_raw.lstrip("0")
-                                if aic_norm:
-                                    code_to_image[aic_norm] = img_raw
+                return code_to_image
 
-                        # Se l'ultima pagina ha meno record del massimo, siamo alla fine
-                        if response.NumRecords < page_size:
-                            break
-
-                        page += 1
-
-                    if not code_to_image:
-                        st.warning(
-                            "No entries found in TDZ via Method 1. "
-                            "Check that TDZ is enabled and contains FDI_T218 / FDI_T438."
-                        )
-
-                    return code_to_image
-
-                except Exception as e:
-                    st.error(f"Error fetching/parsing Farmadati data with Method 1: {e}")
-                    st.stop()
-
+            # ==========================================================
+            # FUNZIONE DI PROCESSING IMMAGINI (come nel tuo codice)
+            # ==========================================================
             def process_image_fd(img_bytes):
                 try:
                     try:
@@ -715,12 +740,15 @@ elif server_country == "Farmadati":
                 except Exception as e:
                     raise RuntimeError(f"Image processing failed: {str(e)}")
 
+            # ==========================================================
+            # MAIN PROCESSING: identico, ma usa la nuova mapping function
+            # ==========================================================
             try:
                 with st.spinner("Loading Farmadati mapping (this may take a minute)..."):
-                    aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
+                    aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD, sku_list_fd)
 
                 if not aic_to_image:
-                    st.error("Farmadati mapping failed.")
+                    st.error("Farmadati mapping failed (no mapping entries).")
                     st.session_state.renaming_start_processing_fd = False
                 else:
                     total_fd = len(sku_list_fd)
@@ -753,8 +781,8 @@ elif server_country == "Farmadati":
                                     )
                                     continue
 
-                                # come prima: la mappa usa AIC senza "IT" e senza zeri
-                                aic_key = clean_sku[2:]
+                                # AIC senza "IT", senza zeri (stessa logica di get_farmadati_mapping)
+                                aic_key = clean_sku[2:].lstrip("0")
                                 image_name = aic_to_image.get(aic_key)
                                 if not image_name:
                                     error_list_fd.append(
@@ -852,9 +880,6 @@ elif server_country == "Farmadati":
                 )
             else:
                 st.info("No errors found.")
-
-
-
 
 
 
