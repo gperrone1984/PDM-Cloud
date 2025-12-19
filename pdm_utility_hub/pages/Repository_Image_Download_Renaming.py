@@ -842,7 +842,7 @@ elif server_country == "Farmadati":
                                 # --- NUOVO PASSO: controllo TR017 / FDI_T139 / FDI_T142 ---
                                 if tr017_has_blocking_manufacturer(aic_key):
                                     error_list_fd.append(
-                                        (original_sku, "download della foto non consentito")
+                                        (original_sku, "Download not allowed")
                                     )
                                     continue
 
