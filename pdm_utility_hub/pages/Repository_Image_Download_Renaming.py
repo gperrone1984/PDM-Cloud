@@ -518,7 +518,15 @@ elif server_country == "Farmadati":
 
     # --- Reset Button ---
     if st.button("🧹 Clear Cache and Reset Data"):
-        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
+        keys_to_remove = [
+            k for k in st.session_state.keys()
+            if k.startswith("renaming_") or k in [
+                "uploader_key", "session_id", "processing_done", "zip_path",
+                "error_path", "farmadati_zip", "farmadati_errors",
+                "farmadati_ready", "process_images_switzerland",
+                "process_images_farmadati"
+            ]
+        ]
         if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
             get_farmadati_mapping.clear()
         for key in keys_to_remove:
@@ -528,8 +536,15 @@ elif server_country == "Farmadati":
         st.info("Cache cleared. Please re-upload your file.")
         st.rerun()
 
-    manual_input_fd = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_farmadati")
-    farmadati_file = st.file_uploader("Upload file (column 'sku')", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
+    manual_input_fd = st.text_area(
+        "Or paste your SKUs here (one per line):",
+        key="manual_input_farmadati"
+    )
+    farmadati_file = st.file_uploader(
+        "Upload file (column 'sku')",
+        type=["xlsx", "csv"],
+        key=st.session_state.renaming_uploader_key
+    )
 
     if st.button("Search Images", key="process_farmadati"):
         st.session_state.renaming_start_processing_fd = True
@@ -539,7 +554,10 @@ elif server_country == "Farmadati":
         if "renaming_error_data_fd" in st.session_state:
             del st.session_state.renaming_error_data_fd
 
-    if st.session_state.get("renaming_start_processing_fd") and not st.session_state.get("renaming_processing_done_fd", False):
+    if (
+        st.session_state.get("renaming_start_processing_fd")
+        and not st.session_state.get("renaming_processing_done_fd", False)
+    ):
         sku_list_fd = get_sku_list(farmadati_file, manual_input_fd)
         if not sku_list_fd:
             st.warning("Please upload a file or paste some SKUs to process.")
@@ -550,19 +568,16 @@ elif server_country == "Farmadati":
             USERNAME = "BDF250621d"
             PASSWORD = "wTP1tvSZ"
 
-            # === CAMBIO 1: WSDL DEL METHOD 1 INVECE DEL METHOD 2 ===
-            # Prima: WS2/FarmadatiItaliaWebServicesM2.svc?wsdl
-            # Ora:   WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl (HTTPS, Method 1)
+            # Method 1 (M1) – HTTPS consigliato
             WSDL_URL = "https://webservices.farmadati.it/WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl"
-
-            DATASET_CODE = "TDZ"   # rimane TDZ, come nel tuo codice
+            DATASET_CODE = "TDZ"  # stessa tabella del tuo codice originale
 
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_mapping(_username, _password):
                 """
                 Usa il METHOD 1 (ExecuteQuery) sul dataset TDZ per costruire
-                la mappa: AIC (FDI_T218, senza zeri) -> nome file immagine (FDI_T438).
-                Non scarica più il .ZIP, ma scorre le pagine di ExecuteQuery.
+                la mappa: AIC (FDI_T218, senza zeri iniziali) -> nome file immagine (FDI_T438).
+                Non scarica più lo ZIP, ma scorre le pagine di ExecuteQuery e parsea l'XML in DataFrame.
                 """
                 history = HistoryPlugin()
                 transport = Transport(cache=InMemoryCache(), timeout=180)
@@ -585,13 +600,12 @@ elif server_country == "Farmadati":
 
                 try:
                     while True:
-                        # Chiamata ExecuteQuery sul dataset TDZ
                         response = client.service.ExecuteQuery(
                             Username=_username,
                             Password=_password,
-                            CodiceSetDati=DATASET_CODE,
+                            CodiceSetDati=DATASET_CODE,              # "TDZ"
                             CampiDaEstrarre=["FDI_T218", "FDI_T438"],
-                            Filtri=None,          # nessun filtro: leggo tutto TDZ, come prima
+                            Filtri=None,                             # nessun filtro: leggo tutto TDZ
                             Ordinamento=None,
                             Distinct=False,
                             Count=False,
@@ -600,34 +614,59 @@ elif server_country == "Farmadati":
                         )
 
                         if response.CodEsito != "OK":
-                            st.error(f"Farmadati API Error (page {page}): {response.CodEsito} - {response.DescEsito}")
+                            st.error(
+                                f"Farmadati API Error (page {page}): "
+                                f"{response.CodEsito} - {response.DescEsito}"
+                            )
                             st.stop()
 
                         # Fine dati
                         if response.OutputValue in (None, "EMPTY") or response.NumRecords == 0:
                             break
 
-                        # Parsing XML (struttura simile al vecchio XML del ZIP)
+                        xml_str = response.OutputValue
+
+                        # Usiamo pandas.read_xml per ottenere direttamente le colonne
                         try:
-                            root = ET.fromstring(response.OutputValue)
-                        except ET.ParseError as e:
-                            st.error(f"Error parsing Farmadati XML from ExecuteQuery (page {page}): {e}")
+                            df_page = pd.read_xml(io.StringIO(xml_str))
+                        except Exception as e:
+                            st.error(f"Error parsing XML from ExecuteQuery (page {page}): {e}")
                             st.stop()
 
-                        # Ogni RECORD contiene i campi FDI_T218 e FDI_T438
-                        for record in root.iter("RECORD"):
-                            t218 = record.find("FDI_T218")
-                            t438 = record.find("FDI_T438")
-                            if t218 is not None and t438 is not None and t218.text and t438.text:
-                                aic = t218.text.strip().lstrip("0")
-                                if aic:
-                                    code_to_image[aic] = t438.text.strip()
+                        if "FDI_T218" not in df_page.columns or "FDI_T438" not in df_page.columns:
+                            st.error(
+                                f"Expected fields FDI_T218 / FDI_T438 not found in TDZ (page {page}). "
+                                f"Columns: {df_page.columns.tolist()}"
+                            )
+                            st.stop()
+
+                        # Costruiamo/aggiorniamo la mappa AIC -> nome immagine
+                        for _, row in (
+                            df_page[["FDI_T218", "FDI_T438"]]
+                            .dropna(subset=["FDI_T218", "FDI_T438"])
+                            .iterrows()
+                        ):
+                            aic_raw = str(row["FDI_T218"]).strip()
+                            img_raw = str(row["FDI_T438"]).strip()
+                            if not aic_raw or not img_raw:
+                                continue
+
+                            # stesso trattamento del tuo codice originale
+                            aic_norm = aic_raw.lstrip("0")
+                            if aic_norm:
+                                code_to_image[aic_norm] = img_raw
 
                         # Se l'ultima pagina ha meno record del massimo, siamo alla fine
                         if response.NumRecords < page_size:
                             break
 
                         page += 1
+
+                    if not code_to_image:
+                        st.warning(
+                            "No entries found in TDZ via Method 1. "
+                            "Check that TDZ is enabled and contains FDI_T218 / FDI_T438."
+                        )
 
                     return code_to_image
 
@@ -691,7 +730,10 @@ elif server_country == "Farmadati":
                     st.session_state.renaming_start_processing_fd = False
                 else:
                     total_fd = len(sku_list_fd)
-                    progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
+                    progress_bar_fd = st.progress(
+                        0,
+                        text="Starting Farmadati processing..."
+                    )
                     error_list_fd = []
                     processed_files_count = 0
                     zip_buffer = BytesIO()
@@ -699,7 +741,10 @@ elif server_country == "Farmadati":
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
                         with requests.Session() as http_session:
                             for i, sku in enumerate(sku_list_fd):
-                                progress_bar_fd.progress((i + 1) / total_fd, text=f"Processing {sku} ({i + 1}/{total_fd})")
+                                progress_bar_fd.progress(
+                                    (i + 1) / total_fd,
+                                    text=f"Processing {sku} ({i + 1}/{total_fd})"
+                                )
                                 original_sku = str(sku).strip()
 
                                 clean_sku = original_sku.upper()
@@ -709,23 +754,33 @@ elif server_country == "Farmadati":
                                     clean_sku = "IT" + clean_sku[2:].lstrip("0")
 
                                 if not clean_sku[2:]:
-                                    error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
+                                    error_list_fd.append(
+                                        (original_sku, "Invalid AIC (empty after IT)")
+                                    )
                                     continue
 
-                                # come prima: mappa usa l'AIC senza IT e senza zeri
-                                image_name = aic_to_image.get(clean_sku[2:])
+                                # come prima: la mappa usa AIC senza "IT" e senza zeri
+                                aic_key = clean_sku[2:]
+                                image_name = aic_to_image.get(aic_key)
                                 if not image_name:
-                                    error_list_fd.append((original_sku, "AIC not in mapping"))
+                                    error_list_fd.append(
+                                        (original_sku, "AIC not in mapping")
+                                    )
                                     continue
 
-                                image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
+                                image_url = (
+                                    "https://ws.farmadati.it/WS_DOC/GetDoc.aspx"
+                                    f"?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
+                                )
 
                                 try:
                                     response = http_session.get(image_url, timeout=45)
                                     response.raise_for_status()
 
-                                    content_type = response.headers.get('Content-Type', '').lower()
-                                    if 'text/html' in content_type or 'text/plain' in content_type:
+                                    content_type = response.headers.get(
+                                        "Content-Type", ""
+                                    ).lower()
+                                    if "text/html" in content_type or "text/plain" in content_type:
                                         if "System.Web.HttpException" in response.text:
                                             raise ValueError("ASPX error page received")
 
@@ -739,13 +794,18 @@ elif server_country == "Farmadati":
 
                                 except requests.exceptions.RequestException as req_e:
                                     reason = f"Network Error: {req_e}"
-                                    if hasattr(req_e, 'response') and req_e.response is not None:
+                                    if hasattr(req_e, "response") and req_e.response is not None:
                                         reason = f"HTTP {req_e.response.status_code}"
                                     error_list_fd.append((original_sku, reason))
                                 except Exception as e:
-                                    error_list_fd.append((original_sku, f"Error: {str(e)}"))
+                                    error_list_fd.append(
+                                        (original_sku, f"Error: {str(e)}")
+                                    )
 
-                    progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
+                    progress_bar_fd.progress(
+                        1.0,
+                        text="Farmadati processing complete!"
+                    )
 
                     if processed_files_count > 0:
                         zip_buffer.seek(0)
@@ -756,7 +816,11 @@ elif server_country == "Farmadati":
                     if error_list_fd:
                         error_df = pd.DataFrame(error_list_fd, columns=["SKU", "Reason"])
                         error_df = error_df.drop_duplicates().sort_values(by="SKU")
-                        csv_error = error_df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+                        csv_error = error_df.to_csv(
+                            index=False,
+                            sep=";",
+                            encoding="utf-8-sig"
+                        ).encode("utf-8-sig")
                         st.session_state["renaming_error_data_fd"] = csv_error
                     else:
                         st.session_state["renaming_error_data_fd"] = None
