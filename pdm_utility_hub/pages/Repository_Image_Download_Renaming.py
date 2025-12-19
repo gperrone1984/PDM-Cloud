@@ -518,15 +518,13 @@ elif server_country == "Farmadati":
 
     # --- Reset Button ---
     if st.button("🧹 Clear Cache and Reset Data"):
-        keys_to_remove = [
-            k for k in st.session_state.keys()
-            if k.startswith("renaming_") or k in [
-                "uploader_key", "session_id", "processing_done", "zip_path",
-                "error_path", "farmadati_zip", "farmadati_errors",
-                "farmadati_ready", "process_images_switzerland",
-                "process_images_farmadati"
-            ]
-        ]
+        keys_to_remove = [k for k in st.session_state.keys()
+                          if k.startswith("renaming_") or k in [
+                              "uploader_key", "session_id", "processing_done", "zip_path",
+                              "error_path", "farmadati_zip", "farmadati_errors",
+                              "farmadati_ready", "process_images_switzerland",
+                              "process_images_farmadati"
+                          ]]
         if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
             get_farmadati_mapping.clear()
         for key in keys_to_remove:
@@ -568,16 +566,17 @@ elif server_country == "Farmadati":
             USERNAME = "BDF250621d"
             PASSWORD = "wTP1tvSZ"
 
-            # Method 1 (M1) – HTTPS consigliato
+            # Method 1 (M1) – HTTPS
             WSDL_URL = "https://webservices.farmadati.it/WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl"
-            DATASET_CODE = "TDZ"  # stessa tabella del tuo codice originale
+            DATASET_CODE = "TDZ"  # come nel tuo codice originale
 
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_mapping(_username, _password):
                 """
                 Usa il METHOD 1 (ExecuteQuery) sul dataset TDZ per costruire
                 la mappa: AIC (FDI_T218, senza zeri iniziali) -> nome file immagine (FDI_T438).
-                Non scarica più lo ZIP, ma scorre le pagine di ExecuteQuery e parsea l'XML in DataFrame.
+                Sostituisce il vecchio GetDataSet+ZIP con una paginazione via ExecuteQuery
+                e parsing XML con ElementTree.
                 """
                 history = HistoryPlugin()
                 transport = Transport(cache=InMemoryCache(), timeout=180)
@@ -626,35 +625,30 @@ elif server_country == "Farmadati":
 
                         xml_str = response.OutputValue
 
-                        # Usiamo pandas.read_xml per ottenere direttamente le colonne
+                        # Parsing XML manuale: cerchiamo tutti gli elementi che hanno FDI_T218 e FDI_T438
                         try:
-                            df_page = pd.read_xml(io.StringIO(xml_str))
-                        except Exception as e:
-                            st.error(f"Error parsing XML from ExecuteQuery (page {page}): {e}")
+                            root = ET.fromstring(xml_str)
+                        except ET.ParseError as e:
+                            st.error(f"Error parsing Farmadati XML from ExecuteQuery (page {page}): {e}")
                             st.stop()
 
-                        if "FDI_T218" not in df_page.columns or "FDI_T438" not in df_page.columns:
-                            st.error(
-                                f"Expected fields FDI_T218 / FDI_T438 not found in TDZ (page {page}). "
-                                f"Columns: {df_page.columns.tolist()}"
-                            )
-                            st.stop()
+                        # Non assumiamo che il tag sia "RECORD": qualsiasi elemento che contenga i due figli va bene
+                        for elem in root.iter():
+                            t218 = elem.find("FDI_T218")
+                            t438 = elem.find("FDI_T438")
+                            if (
+                                t218 is not None and t438 is not None
+                                and t218.text and t438.text
+                            ):
+                                aic_raw = t218.text.strip()
+                                img_raw = t438.text.strip()
+                                if not aic_raw or not img_raw:
+                                    continue
 
-                        # Costruiamo/aggiorniamo la mappa AIC -> nome immagine
-                        for _, row in (
-                            df_page[["FDI_T218", "FDI_T438"]]
-                            .dropna(subset=["FDI_T218", "FDI_T438"])
-                            .iterrows()
-                        ):
-                            aic_raw = str(row["FDI_T218"]).strip()
-                            img_raw = str(row["FDI_T438"]).strip()
-                            if not aic_raw or not img_raw:
-                                continue
-
-                            # stesso trattamento del tuo codice originale
-                            aic_norm = aic_raw.lstrip("0")
-                            if aic_norm:
-                                code_to_image[aic_norm] = img_raw
+                                # stessa logica di normalizzazione del tuo codice originale
+                                aic_norm = aic_raw.lstrip("0")
+                                if aic_norm:
+                                    code_to_image[aic_norm] = img_raw
 
                         # Se l'ultima pagina ha meno record del massimo, siamo alla fine
                         if response.NumRecords < page_size:
