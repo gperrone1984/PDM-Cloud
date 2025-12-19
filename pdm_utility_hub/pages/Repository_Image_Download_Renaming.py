@@ -501,7 +501,7 @@ if server_country == "Switzerland":
 
 
 # ======================================================
-# SECTION: Farmadati (METODO 1 - ExecuteQuery TR017)
+# SECTION: Farmadati
 # ======================================================
 elif server_country == "Farmadati":
     st.header("Farmadati Server Image Processing")
@@ -518,14 +518,7 @@ elif server_country == "Farmadati":
 
     # --- Reset Button ---
     if st.button("🧹 Clear Cache and Reset Data"):
-        keys_to_remove = [
-            k for k in st.session_state.keys()
-            if k.startswith("renaming_") or k in [
-                "uploader_key", "session_id", "processing_done", "zip_path",
-                "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready",
-                "process_images_switzerland", "process_images_farmadati"
-            ]
-        ]
+        keys_to_remove = [k for k in st.session_state.keys() if k.startswith("renaming_") or k in ["uploader_key", "session_id", "processing_done", "zip_path", "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready", "process_images_switzerland", "process_images_farmadati"]]
         if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
             get_farmadati_mapping.clear()
         for key in keys_to_remove:
@@ -536,11 +529,7 @@ elif server_country == "Farmadati":
         st.rerun()
 
     manual_input_fd = st.text_area("Or paste your SKUs here (one per line):", key="manual_input_farmadati")
-    farmadati_file = st.file_uploader(
-        "Upload file (column 'sku')",
-        type=["xlsx", "csv"],
-        key=st.session_state.renaming_uploader_key
-    )
+    farmadati_file = st.file_uploader("Upload file (column 'sku')", type=["xlsx", "csv"], key=st.session_state.renaming_uploader_key)
 
     if st.button("Search Images", key="process_farmadati"):
         st.session_state.renaming_start_processing_fd = True
@@ -558,25 +547,22 @@ elif server_country == "Farmadati":
         else:
             st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
 
-            # -----------------------------------------------------------------
-            # CONFIG: credenziali + WSDL METHOD 1
-            # -----------------------------------------------------------------
             USERNAME = "BDF250621d"
             PASSWORD = "wTP1tvSZ"
-            # Method 1 (M1) – HTTPS consigliato
-            WSDL_URL = "https://webservices.farmadati.it/WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl"
-            DATASET_CODE_TR017 = "TR017"   # Set dati con FDI_T139 / FDI_T142
 
-            # -----------------------------------------------------------------
-            # MAPPATURA AIC -> NOME FILE IMMAGINE VIA METHOD 1 (ExecuteQuery)
-            # -----------------------------------------------------------------
+            # === CAMBIO 1: WSDL DEL METHOD 1 INVECE DEL METHOD 2 ===
+            # Prima: WS2/FarmadatiItaliaWebServicesM2.svc?wsdl
+            # Ora:   WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl (HTTPS, Method 1)
+            WSDL_URL = "https://webservices.farmadati.it/WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl"
+
+            DATASET_CODE = "TDZ"   # rimane TDZ, come nel tuo codice
+
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_mapping(_username, _password):
                 """
-                Crea una mappatura:
-                    AIC (senza zeri iniziali) -> nome file immagine
-                leggendo TR017 tramite ExecuteQuery (Method 1),
-                usando i campi FDI_T139 (codice) e FDI_T142 (nome file).
+                Usa il METHOD 1 (ExecuteQuery) sul dataset TDZ per costruire
+                la mappa: AIC (FDI_T218, senza zeri) -> nome file immagine (FDI_T438).
+                Non scarica più il .ZIP, ma scorre le pagine di ExecuteQuery.
                 """
                 history = HistoryPlugin()
                 transport = Transport(cache=InMemoryCache(), timeout=180)
@@ -590,75 +576,65 @@ elif server_country == "Farmadati":
                         settings=settings
                     )
                 except Exception as e:
-                    st.error(f"Farmadati Connection Error (M1 client init): {e}")
+                    st.error(f"Farmadati Connection Error (Method 1 client init): {e}")
                     st.stop()
 
                 code_to_image = {}
                 page = 1
-                page_size = 100  # max per ExecuteQuery
+                page_size = 100  # max 100 record/pagina per ExecuteQuery
 
-                while True:
-                    try:
+                try:
+                    while True:
+                        # Chiamata ExecuteQuery sul dataset TDZ
                         response = client.service.ExecuteQuery(
                             Username=_username,
                             Password=_password,
-                            CodiceSetDati=DATASET_CODE_TR017,
-                            CampiDaEstrarre=["FDI_T139", "FDI_T142"],
-                            Filtri=None,          # nessun filtro: scarico tutto TR017
+                            CodiceSetDati=DATASET_CODE,
+                            CampiDaEstrarre=["FDI_T218", "FDI_T438"],
+                            Filtri=None,          # nessun filtro: leggo tutto TDZ, come prima
                             Ordinamento=None,
                             Distinct=False,
                             Count=False,
                             PageN=page,
                             PagingN=page_size
                         )
-                    except Exception as e:
-                        st.error(f"Farmadati ExecuteQuery Error (page {page}): {e}")
-                        st.stop()
 
-                    if response.CodEsito != "OK":
-                        st.error(
-                            f"Farmadati API Error (page {page}): "
-                            f"{response.CodEsito} - {response.DescEsito}"
-                        )
-                        st.stop()
+                        if response.CodEsito != "OK":
+                            st.error(f"Farmadati API Error (page {page}): {response.CodEsito} - {response.DescEsito}")
+                            st.stop()
 
-                    # Fine dati
-                    if response.OutputValue == "EMPTY" or response.NumRecords == 0:
-                        break
+                        # Fine dati
+                        if response.OutputValue in (None, "EMPTY") or response.NumRecords == 0:
+                            break
 
-                    # Parsing XML pagina
-                    try:
-                        root = ET.fromstring(response.OutputValue)
-                    except ET.ParseError as e:
-                        st.error(f"Error parsing XML from ExecuteQuery (page {page}): {e}")
-                        st.stop()
+                        # Parsing XML (struttura simile al vecchio XML del ZIP)
+                        try:
+                            root = ET.fromstring(response.OutputValue)
+                        except ET.ParseError as e:
+                            st.error(f"Error parsing Farmadati XML from ExecuteQuery (page {page}): {e}")
+                            st.stop()
 
-                    # Ogni record deve contenere FDI_T139 e FDI_T142
-                    # (il tag del record di solito è RECORD o simile: usiamo iter generico)
-                    for record in root.iter():
-                        t139 = record.find("FDI_T139")
-                        t142 = record.find("FDI_T142")
-                        if (
-                            t139 is not None and t142 is not None
-                            and t139.text and t142.text
-                        ):
-                            # AIC senza zeri iniziali
-                            aic = t139.text.strip().lstrip("0")
-                            image_name = t142.text.strip()
-                            if aic and image_name:
-                                code_to_image[aic] = image_name
+                        # Ogni RECORD contiene i campi FDI_T218 e FDI_T438
+                        for record in root.iter("RECORD"):
+                            t218 = record.find("FDI_T218")
+                            t438 = record.find("FDI_T438")
+                            if t218 is not None and t438 is not None and t218.text and t438.text:
+                                aic = t218.text.strip().lstrip("0")
+                                if aic:
+                                    code_to_image[aic] = t438.text.strip()
 
-                    # Se l'ultima pagina ha meno record del massimo, siamo arrivati in fondo
-                    if response.NumRecords < page_size:
-                        break
+                        # Se l'ultima pagina ha meno record del massimo, siamo alla fine
+                        if response.NumRecords < page_size:
+                            break
 
-                    page += 1
+                        page += 1
 
-                return code_to_image
+                    return code_to_image
 
-            # -----------------------------------------------------------------
-            # FUNZIONE DI PROCESSING IMMAGINI (INVARIATA)
-            # -----------------------------------------------------------------
+                except Exception as e:
+                    st.error(f"Error fetching/parsing Farmadati data with Method 1: {e}")
+                    st.stop()
+
             def process_image_fd(img_bytes):
                 try:
                     try:
@@ -706,9 +682,6 @@ elif server_country == "Farmadati":
                 except Exception as e:
                     raise RuntimeError(f"Image processing failed: {str(e)}")
 
-            # -----------------------------------------------------------------
-            # MAIN PROCESSING LOOP (logica invariata, usa la nuova mappa)
-            # -----------------------------------------------------------------
             try:
                 with st.spinner("Loading Farmadati mapping (this may take a minute)..."):
                     aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
@@ -726,13 +699,9 @@ elif server_country == "Farmadati":
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
                         with requests.Session() as http_session:
                             for i, sku in enumerate(sku_list_fd):
-                                progress_bar_fd.progress(
-                                    (i + 1) / total_fd,
-                                    text=f"Processing {sku} ({i + 1}/{total_fd})"
-                                )
+                                progress_bar_fd.progress((i + 1) / total_fd, text=f"Processing {sku} ({i + 1}/{total_fd})")
                                 original_sku = str(sku).strip()
 
-                                # Normalizzazione SKU -> AIC (senza IT e senza zeri iniziali)
                                 clean_sku = original_sku.upper()
                                 if not clean_sku.startswith("IT"):
                                     clean_sku = "IT" + clean_sku.lstrip("0")
@@ -743,16 +712,13 @@ elif server_country == "Farmadati":
                                     error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
                                     continue
 
-                                # La mappa usa l'AIC senza 'IT' e senza zeri iniziali
+                                # come prima: mappa usa l'AIC senza IT e senza zeri
                                 image_name = aic_to_image.get(clean_sku[2:])
                                 if not image_name:
                                     error_list_fd.append((original_sku, "AIC not in mapping"))
                                     continue
 
-                                image_url = (
-                                    "https://ws.farmadati.it/WS_DOC/GetDoc.aspx"
-                                    f"?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
-                                )
+                                image_url = f"https://ws.farmadati.it/WS_DOC/GetDoc.aspx?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
 
                                 try:
                                     response = http_session.get(image_url, timeout=45)
@@ -790,11 +756,7 @@ elif server_country == "Farmadati":
                     if error_list_fd:
                         error_df = pd.DataFrame(error_list_fd, columns=["SKU", "Reason"])
                         error_df = error_df.drop_duplicates().sort_values(by="SKU")
-                        csv_error = error_df.to_csv(
-                            index=False,
-                            sep=';',
-                            encoding='utf-8-sig'
-                        ).encode('utf-8-sig')
+                        csv_error = error_df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
                         st.session_state["renaming_error_data_fd"] = csv_error
                     else:
                         st.session_state["renaming_error_data_fd"] = None
@@ -832,6 +794,7 @@ elif server_country == "Farmadati":
                 )
             else:
                 st.info("No errors found.")
+
 
 
 
