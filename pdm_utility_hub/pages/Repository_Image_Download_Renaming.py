@@ -531,6 +531,9 @@ elif server_country == "Farmadati":
             get_farmadati_mapping.clear()
         if 'get_farmadati_client' in globals() and hasattr(get_farmadati_client, 'clear'):
             get_farmadati_client.clear()
+        if 'tr017_has_blocking_manufacturer' in globals() and hasattr(tr017_has_blocking_manufacturer, 'clear'):
+            tr017_has_blocking_manufacturer.clear()
+
         for key in keys_to_remove:
             if key in st.session_state:
                 del st.session_state[key]
@@ -567,11 +570,12 @@ elif server_country == "Farmadati":
         else:
             st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
 
-            # === CONFIG: credenziali + WSDL Method 1 + dataset TDZ ===
+            # === CONFIG: credenziali + WSDL Method 1 + dataset TDZ/TR017 ===
             USERNAME = "BDF250621d"
             PASSWORD = "wTP1tvSZ"
             WSDL_URL = "https://webservices.farmadati.it/WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl"
-            DATASET_CODE = "TDZ"  # come nel Colab e nel tuo script originale
+            DATASET_TDZ = "TDZ"
+            DATASET_TR017 = "TR017"
 
             # ==========================================================
             # CLIENT SOAP + tipi Filter / ArrayOfFilter (come in Colab)
@@ -606,8 +610,7 @@ elif server_country == "Farmadati":
                 return client, FilterType, ArrayOfFilterType
 
             # ==========================================================
-            # MAPPATURA AIC -> NOME FILE IMMAGINE
-            # usa la logica Colab: filtro su FDI_T218, leggo FDI_T438
+            # MAPPATURA AIC -> NOME FILE IMMAGINE DA TDZ (FDI_T218 -> FDI_T438)
             # ==========================================================
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_mapping(_username, _password, sku_list):
@@ -620,8 +623,7 @@ elif server_country == "Farmadati":
                 """
                 client, FilterType, ArrayOfFilterType = get_farmadati_client()
 
-                # ricavo gli AIC univoci dalla lista SKU con la stessa logica
-                # che usi nel loop principale
+                # ricavo gli AIC univoci dalla lista SKU
                 unique_aics = set()
                 for sku in sku_list:
                     original_sku = str(sku).strip()
@@ -639,7 +641,6 @@ elif server_country == "Farmadati":
                 code_to_image = {}
 
                 for aic in unique_aics:
-                    # --- identico concetto del Colab: filtro su FDI_T218 ---
                     filtro_obj = FilterType(
                         Key="FDI_T218",
                         Operator="=",
@@ -652,8 +653,8 @@ elif server_country == "Farmadati":
                         result = client.service.ExecuteQuery(
                             Username=_username,
                             Password=_password,
-                            CodiceSetDati=DATASET_CODE,
-                            CampiDaEstrarre=["FDI_T438"],  # solo nome file immagine
+                            CodiceSetDati=DATASET_TDZ,
+                            CampiDaEstrarre=["FDI_T438"],
                             Filtri=filtri,
                             Ordinamento=None,
                             Distinct=False,
@@ -662,33 +663,87 @@ elif server_country == "Farmadati":
                             PagingN=100
                         )
                     except Exception:
-                        # se una query fallisce, salto quell'AIC
                         continue
 
                     if result.CodEsito != "OK":
-                        # se l'esito non è OK, salto
                         continue
 
                     if result.OutputValue == "EMPTY":
-                        # nessun record per questo AIC
                         continue
 
-                    # parsing XML in DataFrame, come nel Colab
                     try:
                         df = pd.read_xml(io.StringIO(result.OutputValue))
                     except Exception:
                         continue
 
                     if "FDI_T438" not in df.columns:
-                        # struttura inattesa: salto
                         continue
 
                     img_values = df["FDI_T438"].dropna().unique().tolist()
                     if img_values:
-                        # prendo il primo nome file immagine
                         code_to_image[aic] = img_values[0]
 
                 return code_to_image
+
+            # ==========================================================
+            # CONTROLLO TR017: BLOCCA PRODUTTORI 2769, 6681, 088H, 6832
+            # (FDI_T139 -> FDI_T142)
+            # ==========================================================
+            @st.cache_resource(ttl=3600, show_spinner=False)
+            def tr017_has_blocking_manufacturer(aic: str) -> bool:
+                """
+                Cerca l'AIC nel campo FDI_T139 di TR017 e controlla FDI_T142.
+                Se FDI_T142 contiene uno dei codici 2769, 6681, 088H, 6832
+                restituisce True (download vietato).
+                """
+                client, FilterType, ArrayOfFilterType = get_farmadati_client()
+                filtro_obj = FilterType(
+                    Key="FDI_T139",
+                    Operator="=",
+                    OrGroup=0,
+                    Value=aic
+                )
+                filtri = ArrayOfFilterType(Filter=[filtro_obj])
+
+                try:
+                    result = client.service.ExecuteQuery(
+                        Username=USERNAME,
+                        Password=PASSWORD,
+                        CodiceSetDati=DATASET_TR017,
+                        CampiDaEstrarre=["FDI_T142"],
+                        Filtri=filtri,
+                        Ordinamento=None,
+                        Distinct=False,
+                        Count=False,
+                        PageN=1,
+                        PagingN=50
+                    )
+                except Exception:
+                    # in caso di errore, lascio passare (False) per non bloccare tutto
+                    return False
+
+                if result.CodEsito != "OK":
+                    return False
+
+                if result.OutputValue == "EMPTY":
+                    return False
+
+                try:
+                    df = pd.read_xml(io.StringIO(result.OutputValue))
+                except Exception:
+                    return False
+
+                if "FDI_T142" not in df.columns:
+                    return False
+
+                blocked_codes = {"2769", "6681", "088H", "6832"}
+
+                for val in df["FDI_T142"].dropna().astype(str):
+                    for code in blocked_codes:
+                        if code in val:
+                            return True
+
+                return False
 
             # ==========================================================
             # FUNZIONE DI PROCESSING IMMAGINI (come nel tuo codice)
@@ -741,7 +796,7 @@ elif server_country == "Farmadati":
                     raise RuntimeError(f"Image processing failed: {str(e)}")
 
             # ==========================================================
-            # MAIN PROCESSING: identico, ma usa la nuova mapping function
+            # MAIN PROCESSING: ora con controllo TR017 prima del download
             # ==========================================================
             try:
                 with st.spinner("Loading Farmadati mapping (this may take a minute)..."):
@@ -781,8 +836,17 @@ elif server_country == "Farmadati":
                                     )
                                     continue
 
-                                # AIC senza "IT", senza zeri (stessa logica di get_farmadati_mapping)
+                                # AIC senza "IT", senza zeri
                                 aic_key = clean_sku[2:].lstrip("0")
+
+                                # --- NUOVO PASSO: controllo TR017 / FDI_T139 / FDI_T142 ---
+                                if tr017_has_blocking_manufacturer(aic_key):
+                                    error_list_fd.append(
+                                        (original_sku, "download della foto non consentito")
+                                    )
+                                    continue
+
+                                # mappa TDZ: AIC -> nome file immagine
                                 image_name = aic_to_image.get(aic_key)
                                 if not image_name:
                                     error_list_fd.append(
@@ -880,6 +944,7 @@ elif server_country == "Farmadati":
                 )
             else:
                 st.info("No errors found.")
+
 
 
 
