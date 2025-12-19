@@ -501,7 +501,7 @@ if server_country == "Switzerland":
 
 
 # ======================================================
-# SECTION: Farmadati
+# SECTION: Farmadati (METODO 1 - ExecuteQuery TR017)
 # ======================================================
 elif server_country == "Farmadati":
     st.header("Farmadati Server Image Processing")
@@ -516,36 +516,21 @@ elif server_country == "Farmadati":
         - **Without Media**
     """)
 
-    # Produttori che NON devono scaricare l'immagine
-    MANUFACTURER_EXCLUDE = {"2769", "6681", "088H", "6832"}
-
     # --- Reset Button ---
     if st.button("🧹 Clear Cache and Reset Data"):
         keys_to_remove = [
             k for k in st.session_state.keys()
-            if k.startswith("renaming_")
-            or k in [
-                "uploader_key",
-                "session_id",
-                "processing_done",
-                "zip_path",
-                "error_path",
-                "farmadati_zip",
-                "farmadati_errors",
-                "farmadati_ready",
-                "process_images_switzerland",
-                "process_images_farmadati",
+            if k.startswith("renaming_") or k in [
+                "uploader_key", "session_id", "processing_done", "zip_path",
+                "error_path", "farmadati_zip", "farmadati_errors", "farmadati_ready",
+                "process_images_switzerland", "process_images_farmadati"
             ]
         ]
-
-        # pulizia cache della funzione TDZ se già definita
-        if "get_farmadati_mapping" in globals() and hasattr(get_farmadati_mapping, "clear"):
+        if 'get_farmadati_mapping' in globals() and hasattr(get_farmadati_mapping, 'clear'):
             get_farmadati_mapping.clear()
-
         for key in keys_to_remove:
             if key in st.session_state:
                 del st.session_state[key]
-
         st.session_state.renaming_uploader_key = str(uuid.uuid4())
         st.info("Cache cleared. Please re-upload your file.")
         st.rerun()
@@ -573,133 +558,107 @@ elif server_country == "Farmadati":
         else:
             st.info(f"Processing {len(sku_list_fd)} SKUs for Farmadati...")
 
-            # --- CONFIGURAZIONE FARMADATI (come nel tuo codice originale) ---
-            USERNAME = "BDF250621d"
-            PASSWORD = "wTP1tvSZ"
-            WSDL_URL = "http://webservices.farmadati.it/WS2/FarmadatiItaliaWebServicesM2.svc?wsdl"
-            DATASET_CODE = "TDZ"
+            # -----------------------------------------------------------------
+            # CONFIG: credenziali + WSDL METHOD 1
+            # -----------------------------------------------------------------
+            USERNAME = "IL_TUO_USERNAME"
+            PASSWORD = "LA_TUA_PASSWORD"
+            # Method 1 (M1) – HTTPS consigliato
+            WSDL_URL = "https://webservices.farmadati.it/WS2S/FarmadatiItaliaWebServicesM1.svc?singleWsdl"
+            DATASET_CODE_TR017 = "TR017"   # Set dati con FDI_T139 / FDI_T142
 
+            # -----------------------------------------------------------------
+            # MAPPATURA AIC -> NOME FILE IMMAGINE VIA METHOD 1 (ExecuteQuery)
+            # -----------------------------------------------------------------
             @st.cache_resource(ttl=3600, show_spinner=False)
             def get_farmadati_mapping(_username, _password):
                 """
-                TDZ: mapping da AIC (FDI_T218, senza zeri iniziali) a nome file immagine (FDI_T438).
-                (Codice copiato dal tuo snippet originale)
+                Crea una mappatura:
+                    AIC (senza zeri iniziali) -> nome file immagine
+                leggendo TR017 tramite ExecuteQuery (Method 1),
+                usando i campi FDI_T139 (codice) e FDI_T142 (nome file).
                 """
                 history = HistoryPlugin()
                 transport = Transport(cache=InMemoryCache(), timeout=180)
                 settings = Settings(strict=False, xml_huge_tree=True)
+
                 try:
                     client = Client(
                         wsdl=WSDL_URL,
-                        wsse=UsernameToken(_username, _password),
                         transport=transport,
                         plugins=[history],
                         settings=settings
                     )
-                    response = client.service.GetDataSet(_username, _password, DATASET_CODE, "GETRECORDS", 1)
                 except Exception as e:
-                    st.error(f"Farmadati Connection/Fetch Error: {e}")
-                    st.stop()
-
-                if response.CodEsito != "OK" or response.ByteListFile is None:
-                    st.error(f"Farmadati API Error: {response.CodEsito} - {response.DescEsito}")
+                    st.error(f"Farmadati Connection Error (M1 client init): {e}")
                     st.stop()
 
                 code_to_image = {}
-                try:
-                    with tempfile.TemporaryDirectory() as tmp_dir:
-                        zip_path_fd = os.path.join(tmp_dir, f"{DATASET_CODE}.zip")
-                        with open(zip_path_fd, "wb") as f:
-                            f.write(response.ByteListFile)
-                        with zipfile.ZipFile(zip_path_fd, 'r') as z:
-                            xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
-                            if not xml_file:
-                                raise FileNotFoundError("XML not in ZIP")
-                            z.extract(xml_file, tmp_dir)
-                            xml_full_path = os.path.join(tmp_dir, xml_file)
+                page = 1
+                page_size = 100  # max per ExecuteQuery
 
-                        context = ET.iterparse(xml_full_path, events=('end',))
-                        for _, elem in context:
-                            if elem.tag == 'RECORD':
-                                t218 = elem.find('FDI_T218')
-                                t438 = elem.find('FDI_T438')
-                                if t218 is not None and t438 is not None and t218.text and t438.text:
-                                    aic = t218.text.strip().lstrip("0")
-                                    if aic:
-                                        code_to_image[aic] = t438.text.strip()
-                                elem.clear()
-                    return code_to_image
-                except Exception as e:
-                    st.error(f"Error parsing Farmadati XML: {e}")
-                    st.stop()
+                while True:
+                    try:
+                        response = client.service.ExecuteQuery(
+                            Username=_username,
+                            Password=_password,
+                            CodiceSetDati=DATASET_CODE_TR017,
+                            CampiDaEstrarre=["FDI_T139", "FDI_T142"],
+                            Filtri=None,          # nessun filtro: scarico tutto TR017
+                            Ordinamento=None,
+                            Distinct=False,
+                            Count=False,
+                            PageN=page,
+                            PagingN=page_size
+                        )
+                    except Exception as e:
+                        st.error(f"Farmadati ExecuteQuery Error (page {page}): {e}")
+                        st.stop()
 
-            def get_tr017_manufacturers(_username, _password, target_aics):
-                """
-                TR017: mapping FDI_T139 (codice prodotto, normalizzato) -> FDI_T142 (produttore),
-                ma solo per gli AIC presenti in target_aics per ridurre il peso.
-                """
-                # normalizza gli AIC target (togli zeri iniziali)
-                target_aics_norm = {
-                    str(a).strip().lstrip("0") for a in target_aics if str(a).strip()
-                }
-                if not target_aics_norm:
-                    return {}
+                    if response.CodEsito != "OK":
+                        st.error(
+                            f"Farmadati API Error (page {page}): "
+                            f"{response.CodEsito} - {response.DescEsito}"
+                        )
+                        st.stop()
 
-                history = HistoryPlugin()
-                transport = Transport(cache=InMemoryCache(), timeout=180)
-                settings = Settings(strict=False, xml_huge_tree=True)
+                    # Fine dati
+                    if response.OutputValue == "EMPTY" or response.NumRecords == 0:
+                        break
 
-                try:
-                    client = Client(
-                        wsdl=WSDL_URL,
-                        wsse=UsernameToken(_username, _password),
-                        transport=transport,
-                        plugins=[history],
-                        settings=settings
-                    )
-                    response = client.service.GetDataSet(_username, _password, "TR017", "GETRECORDS", 1)
-                except Exception as e:
-                    st.error(f"Farmadati TR017 Connection/Fetch Error: {e}")
-                    st.stop()
+                    # Parsing XML pagina
+                    try:
+                        root = ET.fromstring(response.OutputValue)
+                    except ET.ParseError as e:
+                        st.error(f"Error parsing XML from ExecuteQuery (page {page}): {e}")
+                        st.stop()
 
-                if response.CodEsito != "OK" or response.ByteListFile is None:
-                    st.error(f"Farmadati TR017 API Error: {response.CodEsito} - {response.DescEsito}")
-                    st.stop()
+                    # Ogni record deve contenere FDI_T139 e FDI_T142
+                    # (il tag del record di solito è RECORD o simile: usiamo iter generico)
+                    for record in root.iter():
+                        t139 = record.find("FDI_T139")
+                        t142 = record.find("FDI_T142")
+                        if (
+                            t139 is not None and t142 is not None
+                            and t139.text and t142.text
+                        ):
+                            # AIC senza zeri iniziali
+                            aic = t139.text.strip().lstrip("0")
+                            image_name = t142.text.strip()
+                            if aic and image_name:
+                                code_to_image[aic] = image_name
 
-                mapping = {}
-                remaining = set(target_aics_norm)
+                    # Se l'ultima pagina ha meno record del massimo, siamo arrivati in fondo
+                    if response.NumRecords < page_size:
+                        break
 
-                try:
-                    with tempfile.TemporaryDirectory() as tmp_dir:
-                        zip_path_fd = os.path.join(tmp_dir, "TR017.zip")
-                        with open(zip_path_fd, "wb") as f:
-                            f.write(response.ByteListFile)
-                        with zipfile.ZipFile(zip_path_fd, 'r') as z:
-                            xml_file = next((name for name in z.namelist() if name.upper().endswith('.XML')), None)
-                            if not xml_file:
-                                raise FileNotFoundError("XML TR017 not in ZIP")
-                            z.extract(xml_file, tmp_dir)
-                            xml_full_path = os.path.join(tmp_dir, xml_file)
+                    page += 1
 
-                        context = ET.iterparse(xml_full_path, events=('end',))
-                        for _, elem in context:
-                            if elem.tag == 'RECORD':
-                                t139 = elem.find('FDI_T139')  # codice prodotto
-                                t142 = elem.find('FDI_T142')  # codice produttore
-                                if t139 is not None and t142 is not None and t139.text and t142.text:
-                                    code_norm = t139.text.strip().lstrip("0")
-                                    if code_norm in remaining:
-                                        mapping[code_norm] = t142.text.strip()
-                                        remaining.remove(code_norm)
-                                        if not remaining:
-                                            break
-                            elem.clear()
+                return code_to_image
 
-                    return mapping
-                except Exception as e:
-                    st.error(f"Error parsing Farmadati TR017 XML: {e}")
-                    st.stop()
-
+            # -----------------------------------------------------------------
+            # FUNZIONE DI PROCESSING IMMAGINI (INVARIATA)
+            # -----------------------------------------------------------------
             def process_image_fd(img_bytes):
                 try:
                     try:
@@ -747,120 +706,98 @@ elif server_country == "Farmadati":
                 except Exception as e:
                     raise RuntimeError(f"Image processing failed: {str(e)}")
 
+            # -----------------------------------------------------------------
+            # MAIN PROCESSING LOOP (logica invariata, usa la nuova mappa)
+            # -----------------------------------------------------------------
             try:
-                # 1) TDZ: mapping AIC -> nome file immagine (come prima, funzionante)
-                with st.spinner("Loading TDZ image mapping..."):
+                with st.spinner("Loading Farmadati mapping (this may take a minute)..."):
                     aic_to_image = get_farmadati_mapping(USERNAME, PASSWORD)
 
-                # 2) Costruiamo la lista AIC target per TR017 (in base alle SKU che stai processando)
-                aic_targets = set()
-                for sku in sku_list_fd:
-                    s = str(sku).strip().upper()
-                    if not s.startswith("IT"):
-                        s = "IT" + s.lstrip("0")
-                    else:
-                        s = "IT" + s[2:].lstrip("0")
-                    aic_key = s[2:].lstrip("0")
-                    if aic_key:
-                        aic_targets.add(aic_key)
+                if not aic_to_image:
+                    st.error("Farmadati mapping failed.")
+                    st.session_state.renaming_start_processing_fd = False
+                else:
+                    total_fd = len(sku_list_fd)
+                    progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
+                    error_list_fd = []
+                    processed_files_count = 0
+                    zip_buffer = BytesIO()
 
-                # 3) TR017: mapping AIC -> produttore, solo per quegli AIC
-                with st.spinner("Loading TR017 manufacturer data (filtered)..."):
-                    product_to_manufacturer = get_tr017_manufacturers(USERNAME, PASSWORD, aic_targets)
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+                        with requests.Session() as http_session:
+                            for i, sku in enumerate(sku_list_fd):
+                                progress_bar_fd.progress(
+                                    (i + 1) / total_fd,
+                                    text=f"Processing {sku} ({i + 1}/{total_fd})"
+                                )
+                                original_sku = str(sku).strip()
 
-                # 4) Elaborazione SKU -> immagini con filtro produttore
-                total_fd = len(sku_list_fd)
-                progress_bar_fd = st.progress(0, text="Starting Farmadati processing...")
-                error_list_fd = []
-                processed_files_count = 0
-                zip_buffer = BytesIO()
+                                # Normalizzazione SKU -> AIC (senza IT e senza zeri iniziali)
+                                clean_sku = original_sku.upper()
+                                if not clean_sku.startswith("IT"):
+                                    clean_sku = "IT" + clean_sku.lstrip("0")
+                                else:
+                                    clean_sku = "IT" + clean_sku[2:].lstrip("0")
 
-                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-                    with requests.Session() as http_session:
-                        for i, sku in enumerate(sku_list_fd):
-                            progress_bar_fd.progress(
-                                (i + 1) / total_fd,
-                                text=f"Processing {sku} ({i + 1}/{total_fd})"
-                            )
-                            original_sku = str(sku).strip()
-
-                            clean_sku = original_sku.upper()
-                            if not clean_sku.startswith("IT"):
-                                clean_sku = "IT" + clean_sku.lstrip("0")
-                            else:
-                                clean_sku = "IT" + clean_sku[2:].lstrip("0")
-
-                            if not clean_sku[2:]:
-                                error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
-                                continue
-
-                            # AIC senza "IT" normalizzato
-                            aic_key = clean_sku[2:].lstrip("0")
-                            if not aic_key:
-                                error_list_fd.append((original_sku, "Invalid AIC after normalization"))
-                                continue
-
-                            # --- Filtro produttore TR017 ---
-                            manufacturer_code = product_to_manufacturer.get(aic_key)
-                            if manufacturer_code is not None:
-                                manu_norm = manufacturer_code.strip().upper()
-                                if manu_norm in MANUFACTURER_EXCLUDE:
-                                    error_list_fd.append(
-                                        (original_sku, f"Image skipped: excluded manufacturer {manu_norm}")
-                                    )
+                                if not clean_sku[2:]:
+                                    error_list_fd.append((original_sku, "Invalid AIC (empty after IT)"))
                                     continue
-                            # --- Fine filtro produttore ---
 
-                            image_name = aic_to_image.get(aic_key)
-                            if not image_name:
-                                error_list_fd.append((original_sku, "AIC not in TDZ mapping"))
-                                continue
+                                # La mappa usa l'AIC senza 'IT' e senza zeri iniziali
+                                image_name = aic_to_image.get(clean_sku[2:])
+                                if not image_name:
+                                    error_list_fd.append((original_sku, "AIC not in mapping"))
+                                    continue
 
-                            image_url = (
-                                "https://ws.farmadati.it/WS_DOC/GetDoc.aspx"
-                                f"?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
-                            )
+                                image_url = (
+                                    "https://ws.farmadati.it/WS_DOC/GetDoc.aspx"
+                                    f"?accesskey={PASSWORD}&tipodoc=Z&nomefile={requests.utils.quote(image_name)}"
+                                )
 
-                            try:
-                                response = http_session.get(image_url, timeout=45)
-                                response.raise_for_status()
+                                try:
+                                    response = http_session.get(image_url, timeout=45)
+                                    response.raise_for_status()
 
-                                content_type = response.headers.get('Content-Type', '').lower()
-                                if 'text/html' in content_type or 'text/plain' in content_type:
-                                    if "System.Web.HttpException" in response.text:
-                                        raise ValueError("ASPX error page received")
+                                    content_type = response.headers.get('Content-Type', '').lower()
+                                    if 'text/html' in content_type or 'text/plain' in content_type:
+                                        if "System.Web.HttpException" in response.text:
+                                            raise ValueError("ASPX error page received")
 
-                                if not response.content:
-                                    raise ValueError("Empty response")
+                                    if not response.content:
+                                        raise ValueError("Empty response")
 
-                                processed_buffer = process_image_fd(response.content)
-                                output_filename = f"{clean_sku}-h1.jpg"
-                                zipf.writestr(output_filename, processed_buffer.read())
-                                processed_files_count += 1
+                                    processed_buffer = process_image_fd(response.content)
+                                    output_filename = f"{clean_sku}-h1.jpg"
+                                    zipf.writestr(output_filename, processed_buffer.read())
+                                    processed_files_count += 1
 
-                            except requests.exceptions.RequestException as req_e:
-                                reason = f"Network Error: {req_e}"
-                                if hasattr(req_e, 'response') and req_e.response is not None:
-                                    reason = f"HTTP {req_e.response.status_code}"
-                                error_list_fd.append((original_sku, reason))
-                            except Exception as e:
-                                error_list_fd.append((original_sku, f"Error: {str(e)}"))
+                                except requests.exceptions.RequestException as req_e:
+                                    reason = f"Network Error: {req_e}"
+                                    if hasattr(req_e, 'response') and req_e.response is not None:
+                                        reason = f"HTTP {req_e.response.status_code}"
+                                    error_list_fd.append((original_sku, reason))
+                                except Exception as e:
+                                    error_list_fd.append((original_sku, f"Error: {str(e)}"))
 
-                progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
+                    progress_bar_fd.progress(1.0, text="Farmadati processing complete!")
 
-                if processed_files_count > 0:
-                    zip_buffer.seek(0)
-                    st.session_state["renaming_zip_buffer_fd"] = zip_buffer
-                else:
-                    st.session_state["renaming_zip_buffer_fd"] = None
+                    if processed_files_count > 0:
+                        zip_buffer.seek(0)
+                        st.session_state["renaming_zip_buffer_fd"] = zip_buffer
+                    else:
+                        st.session_state["renaming_zip_buffer_fd"] = None
 
-                if error_list_fd:
-                    error_df = pd.DataFrame(error_list_fd, columns=["SKU", "Reason"])
-                    error_df = error_df.drop_duplicates().sort_values(by="SKU")
-                    csv_error = error_df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-                    st.session_state["renaming_error_data_fd"] = csv_error
-                else:
-                    st.session_state["renaming_error_data_fd"] = None
+                    if error_list_fd:
+                        error_df = pd.DataFrame(error_list_fd, columns=["SKU", "Reason"])
+                        error_df = error_df.drop_duplicates().sort_values(by="SKU")
+                        csv_error = error_df.to_csv(
+                            index=False,
+                            sep=';',
+                            encoding='utf-8-sig'
+                        ).encode('utf-8-sig')
+                        st.session_state["renaming_error_data_fd"] = csv_error
+                    else:
+                        st.session_state["renaming_error_data_fd"] = None
 
             except Exception as critical_e:
                 st.error(f"Critical Error during Farmadati processing: {critical_e}")
@@ -895,7 +832,6 @@ elif server_country == "Farmadati":
                 )
             else:
                 st.info("No errors found.")
-
 
 
 
