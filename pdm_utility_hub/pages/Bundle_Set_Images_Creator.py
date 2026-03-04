@@ -225,6 +225,31 @@ async def async_download_image(product_code, extension, session):
     except Exception:
         return None, None
 
+# ====== NEW: download p2..p9 (parallel) + save raw bytes as JPG ======
+async def async_download_p2_to_p9(product_code, session):
+    """
+    Scarica in parallelo le immagini p2..p9.
+    Ritorna dict: {2: bytes, 3: bytes, ...} solo per quelle trovate.
+    """
+    exts = [str(i) for i in range(2, 10)]  # 2..9
+    tasks = [async_download_image(product_code, ext, session) for ext in exts]
+    results = await asyncio.gather(*tasks)
+
+    out = {}
+    for ext, (content, _url) in zip(exts, results):
+        if content:
+            out[int(ext)] = content
+    return out
+
+def save_binary_jpg(dest_path, image_bytes):
+    """
+    Salva bytes così come sono (download + rename only).
+    """
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    with open(dest_path, "wb") as f:
+        f.write(image_bytes)
+# =====================================================================
+
 def trim(im):
     bg = Image.new(im.mode, im.size, (255, 255, 255))
     diff = ImageChops.difference(im, bg)
@@ -425,7 +450,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 if not product_codes:
                     st.warning(f"Skipping bundle {bundle_code}: No valid product codes found.")
                     error_list.append((bundle_code, "No valid PZNs listed"))
-                    # update progress for this batch
                     if progress_bar is not None:
                         progress_bar.progress(
                             (j + 1) / batch_size,
@@ -523,6 +547,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 final_img = await asyncio.to_thread(process_triple_bundle_image, img, layout)
                             else:
                                 final_img = img
+
                             # When fallback_ext is NL FR, create only the -nl-h1 and -fr-h1 images.
                             if st.session_state.get("fallback_ext") == "NL FR":
                                 suffix_nl = "-nl-h1"
@@ -535,6 +560,24 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 suffix = "-h1"
                                 save_path = os.path.join(folder_name, f"{bundle_code}{suffix}.jpg")
                                 await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=75)
+
+                            # ==========================================================
+                            # NEW REQUIREMENT:
+                            # For uniform bundles ONLY: if p1 was found (used_ext == "1"),
+                            # download p2..p9 and rename as bundle-h2..bundle-h9 (raw bytes).
+                            # ==========================================================
+                            if used_ext == "1":
+                                try:
+                                    extra_imgs = await async_download_p2_to_p9(product_code, session)
+                                    for p_num, img_bytes in extra_imgs.items():
+                                        extra_path = os.path.join(folder_name, f"{bundle_code}-h{p_num}.jpg")
+                                        await asyncio.to_thread(save_binary_jpg, extra_path, img_bytes)
+                                except Exception as e:
+                                    st.warning(
+                                        f"Error downloading extra p2..p9 for bundle {bundle_code} (PZN: {product_code}): {e}"
+                                    )
+                                    error_list.append((bundle_code, f"{product_code} (p2..p9 download error)"))
+
                         except Exception as e:
                             st.warning(f"Error processing image for bundle {bundle_code} (PZN: {product_code}, Ext: {used_ext}): {e}")
                             error_list.append((bundle_code, f"{product_code} (Ext: {used_ext} processing error)"))
