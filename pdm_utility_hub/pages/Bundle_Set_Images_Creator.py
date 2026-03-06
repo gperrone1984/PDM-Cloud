@@ -211,8 +211,8 @@ def trim(im: Image.Image) -> Image.Image:
 def _resolve_layout(layout: str, width: int, height: int) -> str:
     layout_l = (layout or "horizontal").lower()
     if layout_l == "automatic":
-        # Choose horizontal for landscape/square, vertical for portrait
-        return "horizontal" if width >= height else "vertical"
+        # INVERTED: choose vertical for landscape/square, horizontal for portrait
+        return "vertical" if width >= height else "horizontal"
     if layout_l in ("horizontal", "vertical"):
         return layout_l
     return "horizontal"
