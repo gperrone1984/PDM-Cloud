@@ -27,7 +27,6 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
 st.markdown(
     """
     <style>
-  /* Sidebar: grigio pieno, altezza schermo, larghezza fissa */
   aside[data-testid="stSidebar"] {
     background-color: #f2f3f5 !important;
     width: 540px !important;
@@ -54,7 +53,6 @@ st.markdown(
     background: transparent !important;
   }
 
-  /* Hide the auto-generated Streamlit sidebar navigation */
   [data-testid="stSidebarNav"] {
       display: none !important;
   }
@@ -70,7 +68,6 @@ st.markdown(
        border-radius: 0.5rem !important;
   }
 
-  /* Base style for app buttons/placeholder (from hub) */
   .app-container {
       display: flex;
       flex-direction: column;
@@ -112,7 +109,6 @@ st.markdown(
       margin: 0 auto;
   }
 
-  /* =============== Sidebar Hide / Show Styles =============== */
   aside[data-testid="stSidebar"].sidebar-closed {
       margin-left: -600px !important;
       transform: translateX(-100%) !important;
@@ -211,10 +207,20 @@ def trim(im: Image.Image) -> Image.Image:
         return im.crop(bbox)
     return im
 
+# ---------------------- FIXED AUTO LAYOUT (IMPORTANT) ----------------------
+def _resolve_layout(layout: str, width: int, height: int) -> str:
+    layout_l = (layout or "horizontal").lower()
+    if layout_l == "automatic":
+        # Choose horizontal for landscape/square, vertical for portrait
+        return "horizontal" if width >= height else "vertical"
+    if layout_l in ("horizontal", "vertical"):
+        return layout_l
+    return "horizontal"
+
 def process_double_bundle_image(image: Image.Image, layout: str = "horizontal") -> Image.Image:
     image = trim(image)
     width, height = image.size
-    chosen_layout = "vertical" if (layout.lower() == "automatic" and height < width) else layout.lower()
+    chosen_layout = _resolve_layout(layout, width, height)
 
     if chosen_layout == "horizontal":
         merged_width, merged_height = width * 2, height
@@ -230,6 +236,7 @@ def process_double_bundle_image(image: Image.Image, layout: str = "horizontal") 
     scale_factor = min(1000 / merged_width, 1000 / merged_height) if merged_width and merged_height else 1
     new_size = (int(merged_width * scale_factor), int(merged_height * scale_factor))
     resized_image = merged_image.resize(new_size, Image.LANCZOS)
+
     final_image = Image.new("RGB", (1000, 1000), (255, 255, 255))
     x_offset = (1000 - new_size[0]) // 2
     y_offset = (1000 - new_size[1]) // 2
@@ -239,7 +246,7 @@ def process_double_bundle_image(image: Image.Image, layout: str = "horizontal") 
 def process_triple_bundle_image(image: Image.Image, layout: str = "horizontal") -> Image.Image:
     image = trim(image)
     width, height = image.size
-    chosen_layout = "vertical" if (layout.lower() == "automatic" and height < width) else layout.lower()
+    chosen_layout = _resolve_layout(layout, width, height)
 
     if chosen_layout == "horizontal":
         merged_width, merged_height = width * 3, height
@@ -257,11 +264,13 @@ def process_triple_bundle_image(image: Image.Image, layout: str = "horizontal") 
     scale_factor = min(1000 / merged_width, 1000 / merged_height) if merged_width and merged_height else 1
     new_size = (int(merged_width * scale_factor), int(merged_height * scale_factor))
     resized_image = merged_image.resize(new_size, Image.LANCZOS)
+
     final_image = Image.new("RGB", (1000, 1000), (255, 255, 255))
     x_offset = (1000 - new_size[0]) // 2
     y_offset = (1000 - new_size[1]) // 2
     final_image.paste(resized_image, (x_offset, y_offset))
     return final_image
+# ------------------------------------------------------------------------
 
 def process_and_save_trimmed_image(image_bytes: bytes, dest_path: str):
     img = Image.open(BytesIO(image_bytes))
@@ -282,14 +291,6 @@ def get_mixed_root(base_folder: str, is_cross_country: bool) -> str:
 
 # ---------- Download extra p2..p9 (standard or language-specific) ----------
 async def async_download_p2_to_p9(product_code: str, session: aiohttp.ClientSession, lang_suffix: Optional[str] = None) -> Dict[int, bytes]:
-    """
-    Scarica in parallelo p2..p9.
-    - lang_suffix=None -> p2..p9
-    - lang_suffix="fr" -> p2-fr..p9-fr
-    - lang_suffix="nl" -> p2-nl..p9-nl
-    - lang_suffix="de" -> p2-de..p9-de
-    Ritorna dict: {2: bytes, 3: bytes, ...} solo per quelle trovate.
-    """
     if lang_suffix:
         exts = [f"{i}-{lang_suffix}" for i in range(2, 10)]
     else:
@@ -434,7 +435,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                 if is_uniform:
                     product_code = product_codes[0]
 
-                    # user selected cross-country mode (FR/DE/NL FR)
                     is_cross_country_mode = fallback_ext in ["NL FR", "1-fr", "1-de", "1-nl"]
                     folder_name = get_uniform_folder(base_folder, num_products, is_cross_country_mode)
                     os.makedirs(folder_name, exist_ok=True)
@@ -514,7 +514,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                         except Exception as e:
                             st.warning(f"Error downloading NL/FR extras p2..p9 for bundle {bundle_code} (PZN: {product_code}): {e}")
                             error_list.append((bundle_code, f"{product_code} (NL/FR p2..p9 download error)"))
-                        # ===========================================================
 
                     # --------- Single image result (p1, p10, or 1-fr/1-de/1-nl) ----------
                     elif result:
@@ -535,10 +534,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                             else:
                                 final_img = img
 
-                            # IMPORTANT:
-                            # If fallback_ext == "NL FR" but we are in this branch, it means we did NOT find p1-fr/p1-nl
-                            # (otherwise we'd be in dict branch). So we can create both h1 by saving same image,
-                            # BUT we must NOT download p2..p9 fr/nl because p1 language is not present.
+                            # If fallback_ext == "NL FR" but NOT dict, p1-fr/p1-nl do not exist -> NO extras
                             if fallback_ext == "NL FR" and used_ext != "NL FR":
                                 folder_name = get_uniform_folder(base_folder, num_products, True)
                                 os.makedirs(folder_name, exist_ok=True)
@@ -549,15 +545,10 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 await asyncio.to_thread(final_img.save, save_path_nl, "JPEG", quality=75)
                                 await asyncio.to_thread(final_img.save, save_path_fr, "JPEG", quality=75)
 
-                                # NO extras here (rule: p2..p9 only if p1 language exists)
-
                             else:
-                                # single-language or standard
                                 if used_ext == "1-fr":
                                     save_path = os.path.join(folder_name, f"{bundle_code}-fr-h1.jpg")
                                     await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=75)
-
-                                    # extras FR only because p1-fr exists
                                     try:
                                         extra = await async_download_p2_to_p9(product_code, session, lang_suffix="fr")
                                         for p_num, img_bytes in extra.items():
@@ -570,8 +561,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 elif used_ext == "1-de":
                                     save_path = os.path.join(folder_name, f"{bundle_code}-de-h1.jpg")
                                     await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=75)
-
-                                    # extras DE only because p1-de exists
                                     try:
                                         extra = await async_download_p2_to_p9(product_code, session, lang_suffix="de")
                                         for p_num, img_bytes in extra.items():
@@ -584,8 +573,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 elif used_ext == "1-nl":
                                     save_path = os.path.join(folder_name, f"{bundle_code}-nl-h1.jpg")
                                     await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=75)
-
-                                    # extras NL only because p1-nl exists
                                     try:
                                         extra = await async_download_p2_to_p9(product_code, session, lang_suffix="nl")
                                         for p_num, img_bytes in extra.items():
@@ -596,7 +583,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                         error_list.append((bundle_code, f"{product_code} (NL p2..p9 download error)"))
 
                                 else:
-                                    # standard (h1)
                                     save_path = os.path.join(folder_name, f"{bundle_code}-h1.jpg")
                                     await asyncio.to_thread(final_img.save, save_path, "JPEG", quality=75)
 
@@ -620,7 +606,6 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
 
                 # ---------------- MIXED SET ----------------
                 else:
-                    # Mixed sets stay as before (trim & save); cross-country structure now has subfolder under cross-country/mixed_sets
                     is_cross_country_mode = fallback_ext in ["NL FR", "1-fr", "1-de", "1-nl"]
                     mixed_root = get_mixed_root(base_folder, is_cross_country_mode)
                     bundle_folder = os.path.join(mixed_root, bundle_code)
