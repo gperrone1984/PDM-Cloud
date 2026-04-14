@@ -63,13 +63,11 @@ div[data-testid="stAppViewContainer"] > section > div.block-container {
 </style>
 """, unsafe_allow_html=True)
 
-
 # =========================
 # 3) Sidebar: solo il bottone
 # =========================
 st.sidebar.page_link("app.py", label="**PDM Utility Hub**", icon="🏠")
 st.sidebar.markdown("---")
-
 
 # =========================
 # 4) Script: chiusura totale
@@ -104,10 +102,30 @@ const wait = setInterval(() => {
 def strip_accents(s):
     if not isinstance(s, str):
         s = str(s)
-    return ''.join(ch for ch in unicodedata.normalize('NFD', s) if not unicodedata.combining(ch))
+    return ''.join(
+        ch for ch in unicodedata.normalize('NFD', s)
+        if not unicodedata.combining(ch)
+    )
+
+def normalize_text(s):
+    """
+    Normalizza il testo per rendere la ricerca più robusta:
+    - rimuove accenti
+    - converte in lowercase
+    - sostituisce spazi multipli con uno singolo
+    """
+    s = strip_accents(s)
+    s = s.lower()
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 def build_spacing_pattern(term):
-    return r"(?<!\\w)" + ''.join([re.escape(c) + r"\\s*" for c in term]) + r"(?!\\w)"
+    """
+    Costruisce un pattern che permette spazi facoltativi tra tutti i caratteri.
+    Esempio:
+    NMN -> (?<!\\w)n\\s*m\\s*n\\s*(?!\\w)
+    """
+    return r"(?<!\w)" + ''.join(re.escape(c) + r"\s*" for c in term) + r"(?!\w)"
 
 # Inizializza lo stato per input e uploader
 if 'uploader_key' not in st.session_state:
@@ -121,7 +139,7 @@ st.session_state.setdefault('download_bytes', b'')
 st.session_state.setdefault('download_filename', '')
 
 def clear_all():
-    # Svuota TUTTI i campi delle celle
+    # Svuota tutti i campi delle celle
     for i in range(1, 11):
         st.session_state[f'term{i}'] = ''
     # Svuota filename e download
@@ -163,7 +181,11 @@ custom_filename = st.text_input("Output filename", key="custom_filename")
 # ------------ Azione: cerca e prepara il file ------------
 if st.button("Search and Download"):
     # Costruisci lista termini puliti
-    terms = [st.session_state[f'term{i}'].strip() for i in range(1, 11) if st.session_state[f'term{i}'].strip()]
+    terms = [
+        st.session_state[f'term{i}'].strip()
+        for i in range(1, 11)
+        if st.session_state[f'term{i}'].strip()
+    ]
 
     if not uploaded_file:
         st.error("Please upload a file first.")
@@ -175,41 +197,58 @@ if st.button("Search and Download"):
 
     st.info("Reading file progressively — please wait...")
 
-    # compile patterns
-    term_noacc = [strip_accents(t) for t in terms]
-    term_compact = [re.sub(r"\\s+", "", t) for t in term_noacc]
+    # Normalizza i termini
+    normalized_terms = [normalize_text(t) for t in terms]
+
+    # Rimuove gli spazi per poi permettere spazi facoltativi tra i caratteri
+    term_compact = [re.sub(r"\s+", "", t) for t in normalized_terms]
+
+    # Compila le regex corrette
     compiled = [re.compile(build_spacing_pattern(t), re.IGNORECASE) for t in term_compact]
     per_term_counts = [0] * len(compiled)
 
     wb = openpyxl.load_workbook(uploaded_file, read_only=True, data_only=True)
     ws = wb.active
 
-    headers = [str(c.value) if c.value is not None else "" for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    headers = [
+        str(c.value) if c.value is not None else ""
+        for c in next(ws.iter_rows(min_row=1, max_row=1))
+    ]
 
     matches = []
     total = 0
     matched = 0
     progress = st.progress(0)
 
+    max_row = ws.max_row or 1
+
     for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         total += 1
         row_values = ["" if v is None else str(v) for v in row]
+
+        # Unisci e normalizza tutta la riga
         text = ' '.join(row_values)
-        text_noacc = strip_accents(text)
-        row_hits = [terms[j] for j, pat in enumerate(compiled) if pat.search(text_noacc)]
+        text_normalized = normalize_text(text)
+
+        # Verifica quali termini matchano
+        row_hits = []
+        for j, pat in enumerate(compiled):
+            if pat.search(text_normalized):
+                row_hits.append(terms[j])
 
         if row_hits:
             matched += 1
+
             for j, pat in enumerate(compiled):
-                if pat.search(text_noacc):
+                if pat.search(text_normalized):
                     per_term_counts[j] += 1
 
             row_dict = dict(zip(headers, row_values))
-            row_dict["Matched terms"] = ";".join(row_hits)
+            row_dict["Matched terms"] = "; ".join(row_hits)
             matches.append(row_dict)
 
         if i % 1000 == 0:
-            progress.progress(min(1.0, i / (ws.max_row or 1)))
+            progress.progress(min(1.0, i / max_row))
 
     progress.empty()
     wb.close()
@@ -219,7 +258,10 @@ if st.button("Search and Download"):
         st.stop()
 
     result_df = pd.DataFrame(matches)
-    report_df = pd.DataFrame({"Term": terms, "Rows matched": per_term_counts})
+    report_df = pd.DataFrame({
+        "Term": terms,
+        "Rows matched": per_term_counts
+    })
 
     st.success(f"Matched {matched} rows out of ~{total} scanned.")
     st.dataframe(report_df, use_container_width=True)
