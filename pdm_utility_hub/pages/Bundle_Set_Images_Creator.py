@@ -182,7 +182,7 @@ def clear_old_data():
 
 # ---------------------- Helper Functions ----------------------
 async def async_download_image(product_code: str, extension: str, session: aiohttp.ClientSession):
-    if product_code.startswith(('1', '0')):
+    if product_code.startswith(('2', '1', '0')):
         product_code = f"D{product_code}"
     url = f"https://cdn.shop-apotheke.com/images/{product_code}-p{extension}.jpg"
     try:
@@ -416,7 +416,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
 
                 if not product_codes:
                     st.warning(f"Skipping bundle {bundle_code}: No valid product codes found.")
-                    error_list.append((bundle_code, "No valid PZNs listed"))
+                    error_list.append((bundle_code, "No valid PZNs listed", "unknown"))
                     if progress_bar is not None:
                         progress_bar.progress(
                             (j + 1) / batch_size,
@@ -463,7 +463,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 processed_keys.append(lang)
                             except Exception as e:
                                 st.warning(f"Error processing {lang} image for bundle {bundle_code} (PZN: {product_code}): {e}")
-                                error_list.append((bundle_code, f"{product_code} ({lang} processing error)"))
+                                error_list.append((bundle_code, f"{product_code} ({lang} processing error)", bundle_type))
 
                         # duplicate missing lang for h1 (keep your behaviour)
                         if "1-fr" not in processed_keys and "1-nl" in processed_keys:
@@ -478,7 +478,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=75)
                             except Exception as e:
                                 st.warning(f"Error duplicating 1-fr for bundle {bundle_code} (PZN: {product_code}): {e}")
-                                error_list.append((bundle_code, f"{product_code} (dup 1-fr processing error)"))
+                                error_list.append((bundle_code, f"{product_code} (dup 1-fr processing error)", bundle_type))
 
                         if "1-nl" not in processed_keys and "1-fr" in processed_keys:
                             try:
@@ -492,7 +492,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 await asyncio.to_thread(final_img_dup.save, dup_save_path, "JPEG", quality=75)
                             except Exception as e:
                                 st.warning(f"Error duplicating 1-nl for bundle {bundle_code} (PZN: {product_code}): {e}")
-                                error_list.append((bundle_code, f"{product_code} (dup 1-nl processing error)"))
+                                error_list.append((bundle_code, f"{product_code} (dup 1-nl processing error)", bundle_type))
 
                         # ===== extras p2..p9 ONLY if p1 exists for that language =====
                         try:
@@ -513,7 +513,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
 
                         except Exception as e:
                             st.warning(f"Error downloading NL/FR extras p2..p9 for bundle {bundle_code} (PZN: {product_code}): {e}")
-                            error_list.append((bundle_code, f"{product_code} (NL/FR p2..p9 download error)"))
+                            error_list.append((bundle_code, f"{product_code} (NL/FR p2..p9 download error)", bundle_type))
 
                     # --------- Single image result (p1, p10, or 1-fr/1-de/1-nl) ----------
                     elif result:
@@ -556,7 +556,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                             await asyncio.to_thread(save_binary_jpg, extra_path, img_bytes)
                                     except Exception as e:
                                         st.warning(f"Error downloading FR extras p2..p9 for bundle {bundle_code} (PZN: {product_code}): {e}")
-                                        error_list.append((bundle_code, f"{product_code} (FR p2..p9 download error)"))
+                                        error_list.append((bundle_code, f"{product_code} (FR p2..p9 download error)", bundle_type))
 
                                 elif used_ext == "1-de":
                                     save_path = os.path.join(folder_name, f"{bundle_code}-de-h1.jpg")
@@ -568,7 +568,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                             await asyncio.to_thread(save_binary_jpg, extra_path, img_bytes)
                                     except Exception as e:
                                         st.warning(f"Error downloading DE extras p2..p9 for bundle {bundle_code} (PZN: {product_code}): {e}")
-                                        error_list.append((bundle_code, f"{product_code} (DE p2..p9 download error)"))
+                                        error_list.append((bundle_code, f"{product_code} (DE p2..p9 download error)", bundle_type))
 
                                 elif used_ext == "1-nl":
                                     save_path = os.path.join(folder_name, f"{bundle_code}-nl-h1.jpg")
@@ -580,7 +580,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                             await asyncio.to_thread(save_binary_jpg, extra_path, img_bytes)
                                     except Exception as e:
                                         st.warning(f"Error downloading NL extras p2..p9 for bundle {bundle_code} (PZN: {product_code}): {e}")
-                                        error_list.append((bundle_code, f"{product_code} (NL p2..p9 download error)"))
+                                        error_list.append((bundle_code, f"{product_code} (NL p2..p9 download error)", bundle_type))
 
                                 else:
                                     save_path = os.path.join(folder_name, f"{bundle_code}-h1.jpg")
@@ -595,14 +595,14 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                                 await asyncio.to_thread(save_binary_jpg, extra_path, img_bytes)
                                         except Exception as e:
                                             st.warning(f"Error downloading extras p2..p9 for bundle {bundle_code} (PZN: {product_code}): {e}")
-                                            error_list.append((bundle_code, f"{product_code} (p2..p9 download error)"))
+                                            error_list.append((bundle_code, f"{product_code} (p2..p9 download error)", bundle_type))
 
                         except Exception as e:
                             st.warning(f"Error processing image for bundle {bundle_code} (PZN: {product_code}, Ext: {used_ext}): {e}")
-                            error_list.append((bundle_code, f"{product_code} (Ext: {used_ext} processing error)"))
+                            error_list.append((bundle_code, f"{product_code} (Ext: {used_ext} processing error)", bundle_type))
 
                     else:
-                        error_list.append((bundle_code, product_code))
+                        error_list.append((bundle_code, product_code, bundle_type))
 
                 # ---------------- MIXED SET ----------------
                 else:
@@ -652,7 +652,7 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
                                 file_path = os.path.join(prod_folder, f"{p_code}{suffix}.jpg")
                                 await asyncio.to_thread(process_and_save_trimmed_image, result, file_path)
                         else:
-                            error_list.append((bundle_code, p_code))
+                            error_list.append((bundle_code, p_code, bundle_type))
 
                     if item_is_cross_country:
                         bundle_cross_country = True
@@ -671,12 +671,13 @@ async def process_file_async(uploaded_file, progress_bar=None, layout="horizonta
 
     # Reports
     missing_images_data = None
-    missing_images_df = pd.DataFrame(columns=["PZN Bundle", "PZN with image missing"])
+    missing_images_df = pd.DataFrame(columns=["PZN Bundle", "PZN with image missing", "bundle type"])
     if error_list:
-        missing_images_df = pd.DataFrame(error_list, columns=["PZN Bundle", "PZN with image missing"])
-        missing_images_df = missing_images_df.groupby("PZN Bundle", as_index=False).agg({
+        missing_images_df = pd.DataFrame(error_list, columns=["PZN Bundle", "PZN with image missing", "bundle type"])
+        missing_images_df = missing_images_df.groupby(["PZN Bundle", "bundle type"], as_index=False).agg({
             "PZN with image missing": lambda x: ', '.join(sorted(list(set(map(str, x)))))
         })
+        missing_images_df = missing_images_df[["PZN Bundle", "bundle type", "PZN with image missing"]]
         try:
             missing_images_df.to_excel(missing_images_excel_path, index=False)
             with open(missing_images_excel_path, "rb") as f_csv:
@@ -734,7 +735,7 @@ st.markdown(
     """
     **How to use:**
 
-    1. Create a **Quick Report** in **Akeneo** containing the list of products.
+    1. Create a **Quick Report** in **Akeneo** containing the list of products **(max 1000-1200 SKUs)**.
     2. Select the following options:
        - File Type: **CSV** or **Excel** - All Attributes or Grid Context (for Grid Context, select ID and PZN included in the set) - **With Codes** - **Without Media**
     3. **Choose the language for language specific photos:** (if needed)
@@ -799,7 +800,7 @@ if show_image and product_code_preview:
     with spinner_placeholder:
         with st.spinner("Processing..."):
             pzn_url = product_code_preview.strip()
-            if pzn_url.startswith(('1', '0')):
+            if pzn_url.startswith(('2', '1', '0')):
                 pzn_url = f"D{pzn_url}"
             preview_url = f"https://cdn.shop-apotheke.com/images/{pzn_url}-p{selected_extension}.jpg"
             image_data = None
